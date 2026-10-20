@@ -1,155 +1,214 @@
-# FinMind — Three-Week Implementation Plan
+# FinMind — Implementation Plan
 
-**Plan basis:** FinMind consolidated specification v0.3.0-consolidated (2026-10-17)  
-**Duration:** 3 weeks / 15 working days  
-**Team:** 5 members (roles below; replace labels with actual names)  
-**Delivery target:** Integrated MVP demonstrating the in-scope technical engine, investor profile, rule-based recommendation engine, technical monitoring, evidence-grounded explanations, and minimal intent orchestration.
+> **Source of truth:** `FinMind_unified_fastapi_spec.md` supplied by the project owner.
+> **Planning horizon:** 3 weeks.
+> **Team:** Team Member 1–5. Names, skills, and roles were not specified; assignments below are planning decisions, not project requirements.
+> **Scope rule:** This plan preserves the modules, boundaries, contracts, and requirements in the source specification. It does not remove or redesign project functionality.
 
-> **Scope guardrail:** The specification explicitly defers the Arabic News Agent, news ingestion/NLP/Chroma, position sizing, portfolio construction, holdings decisions, and external notification delivery. They are excluded from this 3-week commitment. The MVP uses `NEWS_ENABLED=false`, empty news evidence, and a no-op notification dispatcher. A 3-week build is aggressive; this plan assumes a usable starter EGX price dataset/provider, development credentials/LLM availability (or a fake for tests), and team members able to work in parallel. If those assumptions fail, cut LangMem and nonessential dashboard-facing APIs before cutting safety, auditability, contract tests, or reproducibility.
+## 1. Project Scope Summary
 
-## 1. Delivery goals and acceptance
+FinMind is an async Python/PostgreSQL financial system exposed through FastAPI. The source specification contains five ordered modules: Investor Agent; Technical Engine and Recommendation Engine; News Agent; Explanation Agent; and Monitoring Service. The shared platform provides FastAPI routing, Pydantic contracts, authentication dependencies, database sessions, lifecycle management, scheduled jobs, logging, error handling, migrations, and tests.
 
-At the end of Week 3, a user should be able to:
+The Investor Agent collects and confirms an investor profile. The Technical Engine ingests prices, validates data, calculates indicators and technical snapshots. The Recommendation Engine combines technical snapshots with the confirmed profile and produces rule-based recommendation output. The News Agent ingests permitted news, links it to EGX companies, produces evidence-backed positive/negative/neutral/unknown direction, and does not make the final recommendation or calculate an impact score. The Explanation Agent explains prepared recommendations and alerts and provides the Stock Q&A mode through read-only snapshot tools. The Monitoring Service evaluates deterministic rules against stored market and technical data, persists alerts, and provides rule/alert APIs.
 
-1. Run the service locally using Docker Compose and PostgreSQL, with health checks and migrations.
-2. Generate/read a valid, versioned technical snapshot for a stock from OHLCV data, including quality state, core indicators, family scores, regime, and setup score.
-3. Complete an Arabic investor-profile interview, review and explicitly confirm a profile, and see the active version; no unconfirmed profile is persisted as active.
-4. Request a single-stock recommendation that combines the active profile with the latest valid snapshot, applies deterministic gates, logs the complete reproducible output, and does not call an LLM to decide.
-5. Create monitoring rules, evaluate them against fresh snapshots, persist deduplicated alerts with sufficient evidence, and read/acknowledge owned alerts.
-6. Explain a stored recommendation or alert, answer read-only technical questions, and route a “should I buy?” question through the recommendation path. Stale/missing data and safety disclaimers are handled explicitly.
-7. Pass unit, integration, contract, security/ownership, and end-to-end smoke tests; document known limitations and deferred features.
+The complete source scope is substantial for three weeks. Five people can establish the architecture, contracts, first working paths, and integration in that period, but full production hardening, all source adapters, complete Arabic NLP evaluation, RAG quality evaluation, and exhaustive market-data validation may require work beyond three weeks. This is a schedule risk, not a scope reduction.
 
-**Not a production investment-advice certification.** The MVP does not promise returns, execute trades, calculate portfolio sizes, or establish that any score predicts returns. All user-facing financial output carries the required disclaimer.
+## 2. README Requirements Register
 
-## 2. Team allocation
+| Requirement ID | Source requirement/module | Requirement statement | User-facing? |
+|---|---|---|---|
+| REQ-001 | Project-wide FastAPI setup | Use FastAPI as the project HTTP boundary with modular routers and business logic outside route handlers. | No |
+| REQ-002 | Project-wide runtime | Use Python 3.11+, async SQLAlchemy/asyncpg, PostgreSQL 15+, Pydantic v2, Alembic, Uvicorn, APScheduler, tests, and structured logging as specified. | No |
+| REQ-003 | Shared application | Provide application creation, configuration loading, router registration, lifespan startup/shutdown, health endpoints, and dependency cleanup. | No |
+| REQ-004 | Shared API/security | Use typed schemas, authentication dependencies, database dependencies, ownership checks, UTC timestamps, request IDs, consistent errors, structured logs, and protected internal routes. | Partly |
+| REQ-005 | Shared data contracts | Use PostgreSQL as canonical storage; use ChromaDB only as a retrieval index; preserve stable IDs, dates, versions, status, provenance, and explicit missing/stale states. | No |
+| REQ-006 | Investor Agent | Conduct the Arabic conversational investor interview using a stateful LangGraph workflow. | Yes |
+| REQ-007 | Investor Agent | Extract risk, horizon, goal, experience, sector preferences, ticker exclusions, and constraints into validated structured data. | Yes |
+| REQ-008 | Investor Agent | Validate consistency, resolve contradictions, and continue the interview until required information is complete. | Yes |
+| REQ-009 | Investor Agent | Present an Arabic profile summary and require explicit human confirmation before activation. | Yes |
+| REQ-010 | Investor Agent | Persist confirmed profiles, audit changes, checkpoints, and learned preferences in PostgreSQL/LangMem as specified. | Partly |
+| REQ-011 | Investor Agent boundary | Do not calculate indicators, make recommendations, execute orders, or bypass confirmation in the Investor Agent. | No |
+| REQ-012 | Technical data | Ingest daily OHLCV prices after the market session and maintain the consistent price series and history. | No |
+| REQ-013 | Technical data quality | Detect insufficient history, gaps, zero volume, stale data, unexplained jumps, duplicate dates, and out-of-order dates; do not silently interpolate. | No |
+| REQ-014 | Technical indicators | Calculate the specified trend, momentum, volume, volatility, support/resistance, regime, liquidity, and context indicators deterministically. | No |
+| REQ-015 | Technical scoring | Normalize indicators to bounded 0–100 scores and calculate Trend, Momentum, Volume, and Support/Resistance family scores using the specified rules. | No |
+| REQ-016 | Regime/risk | Calculate ADX regime and volatility/risk metrics separately from the setup score. | No |
+| REQ-017 | Technical snapshots | Store reproducible technical snapshots containing raw inputs, indicators, scores, regime, risk, prices, and configuration version. | No |
+| REQ-018 | Recommendation filters | Apply data-quality, liquidity, exclusions, and other specified filters before a recommendation. | No |
+| REQ-019 | Recommendation gates | Apply profile-specific minimums and technical family rules; use setup score for ranking/display only, not as the sole decision. | No |
+| REQ-020 | Recommendation output | Produce direction, confidence, blockers/reasons, family results, user fit, data quality, and the documented recommendation payload. | Yes |
+| REQ-021 | Recommendation audit | Persist recommendation logs with the specified user, ticker, date, snapshot, configuration, decision, blockers, confidence, and timestamp fields. | No |
+| REQ-022 | News ingestion | Collect permitted financial news and disclosures through configured sources, schedules, retries, rate limits, and backfill support. | No |
+| REQ-023 | News normalization | Preserve original content, normalize Arabic/multilingual text, validate metadata, deduplicate, and preserve provenance. | No |
+| REQ-024 | Company linking | Link articles to canonical EGX companies/tickers using aliases, confidence, ambiguity handling, and abstention when necessary. | No |
+| REQ-025 | News direction/evidence | Classify event type and evidence-backed direction as positive, negative, neutral, or unknown with confidence, relevance, novelty, freshness, and source reliability; do not expose an impact level/score. | Partly |
+| REQ-026 | News persistence/retrieval | Store articles, analyses, links, and news signals in PostgreSQL; index permitted chunks in ChromaDB with stable references; expose typed tools. | Partly |
+| REQ-027 | News API | Expose the specified News Agent FastAPI routes, internal routes, validation, security, observability, and error semantics. | Yes |
+| REQ-028 | News integration | Send news evidence/direction to Recommendation, Monitoring, and Explanation contracts without making a final recommendation in News Agent. | No |
+| REQ-029 | Explanation inputs | Explain validated Recommendation Engine outputs and Monitoring Service alerts without changing decisions or inventing evidence. | Yes |
+| REQ-030 | Explanation evidence | Retrieve and cite authorized financial evidence, preserve source metadata, distinguish facts from interpretation, and state uncertainty. | Yes |
+| REQ-031 | Explanation modes | Support recommendation explanation, alert explanation, follow-up, and Stock Q&A modes in one Explanation Agent. | Yes |
+| REQ-032 | Stock Q&A tools | In Stock Q&A, use only the read-only snapshot tools: technical snapshot, snapshot history, price history, snapshot comparison, and indicator glossary. | Yes |
+| REQ-033 | Stock Q&A safety | Answer only from tool output, include data date/freshness, verify numeric claims, reject recommendation language, retry once, and use a safe fallback when needed. | Yes |
+| REQ-034 | Arabic explanation | Preserve Arabic output style, disclaimer, source attribution, uncertainty, and no-guarantee behavior. | Yes |
+| REQ-035 | Monitoring rules | Load and validate active rules and evaluate RSI, moving-average cross, volatility, and score-change rules deterministically. | Yes |
+| REQ-036 | Monitoring data safety | Read shared market/technical tables only, validate freshness, and skip stale tickers without creating user alerts. | No |
+| REQ-037 | Monitoring persistence | Own and persist monitoring rules, rule states, runs, alerts, evidence, cooldown/deduplication, and optional notification attempts as specified. | Partly |
+| REQ-038 | Monitoring execution | Run scheduled monitoring cycles with PostgreSQL advisory-lock overlap prevention, per-rule/per-ticker error handling, and run status. | No |
+| REQ-039 | Monitoring API | Expose authenticated rule, alert, acknowledgement, run, and health APIs with user ownership checks. | Yes |
+| REQ-040 | Cross-module integration | Align Investor→Recommendation, Technical→Recommendation/Monitoring, News→Recommendation/Monitoring/Explanation, Monitoring→Explanation, and all FastAPI schemas. | No |
+| REQ-041 | Testing/acceptance | Provide unit, integration, API, contract, security, evaluation, and end-to-end validation for the specified modules and contracts. | No |
+| REQ-042 | Active News Agent | Implement News Agent as active scope; do not defer, disable, or replace it with an unimplemented placeholder. | No |
 
-| Member | Primary ownership | Week 1 focus | Week 2 focus | Week 3 focus |
+## 3. Implementation Plan
+
+Effort is a planning estimate in person-days. Assignments are organizational decisions because the source does not specify team roles.
+
+| Plan ID | Requirement ID(s) | Module/Feature | Task description | Subtasks | Dependencies | Priority | Assigned member | Effort | Week/days | Definition of Done | Notes / clarification needed |
+|---|---|---|---|---|---|---|---|---:|---|---|---|
+| PLAN-001 | REQ-001–REQ-005 | Platform foundation | Create the shared FastAPI application skeleton and cross-module contracts. | Create package layout; settings; app factory; common schemas; error envelope; router registry. | None | P0 | Team Member 1 | 3 | W1 D1–3 | App starts; routers load; health route responds; contracts compile. | Authentication provider and deployment environment are **NEEDS CLARIFICATION**. |
+| PLAN-002 | REQ-002–REQ-005 | Persistence foundation | Configure async PostgreSQL, SQLAlchemy, Alembic, logging, request IDs, and lifecycle cleanup. | Engine/session factory; base models; migration config; structured logs; lifespan cleanup. | PLAN-001 | P0 | Team Member 1 | 3 | W1 D3–5 | Database connects; migration runs; sessions close; logs contain request IDs. | Actual shared `users` table contract is **NEEDS CLARIFICATION**. |
+| PLAN-003 | REQ-004 | Security/API boundary | Implement shared authentication, authorization dependencies, ownership checks, rate limiting boundary, and internal service authentication. | Auth dependency; current-user dependency; internal-route guard; safe exceptions; route tests. | PLAN-001 | P0 | Team Member 5 | 3 | W1 D3–5 | Protected routes reject unauthorized requests and do not leak data. | Identity provider and exact JWT policy are **NEEDS CLARIFICATION**. |
+| PLAN-004 | REQ-006–REQ-011 | Investor Agent workflow | Implement profile interview state and deterministic validation. | LangGraph state; question sequencing; structured extraction; contradiction handling; completeness checks. | PLAN-001, PLAN-002, PLAN-003 | P0 | Team Member 2 | 5 | W1 D2–5, W2 D1 | Interview progresses and rejects incomplete/conflicting state. | Exact LLM/provider and LangMem deployment are **NEEDS CLARIFICATION**. |
+| PLAN-005 | REQ-009–REQ-011 | Investor Agent confirmation | Implement summary, HITL confirmation, edits, persistence, audit, and API routes. | Summary schema; confirm endpoint; edit endpoint; profile repository; audit records; tests. | PLAN-004 | P0 | Team Member 2 | 4 | W2 D1–4 | Unconfirmed profile cannot be used as active profile; confirmed state is persisted and audited. | Dashboard implementation is outside the supplied backend details; **NEEDS CLARIFICATION** if required here. |
+| PLAN-006 | REQ-010 | Investor memory | Integrate LangMem tiers and preference drift/reprofiling handling from the source. | Memory adapter; validated preference writes; drift event handling; PII minimization. | PLAN-004, PLAN-005 | P1 | Team Member 2 | 3 | W2 D4–5, W3 D1 | Preferences are versioned, validated, and never change foundational risk without confirmation. | Exact LangMem storage backend is **NEEDS CLARIFICATION**. |
+| PLAN-007 | REQ-012–REQ-013 | Price ingestion | Implement daily price ingestion and data-quality validation. | Source adapter boundary; OHLCV persistence; exchange calendar hook; history checks; stale/gap flags. | PLAN-001, PLAN-002 | P0 | Team Member 3 | 5 | W1 D1–5 | Valid data is persisted; each specified invalid condition is flagged and tested. | Provider, exchange-calendar source, and corporate-action policy are **NEEDS CLARIFICATION**. |
+| PLAN-008 | REQ-014–REQ-017 | Technical Engine | Implement deterministic indicators, normalization, family scores, regime, risk, setup score, and snapshots. | Indicator functions; scoring tables; support/resistance; ADX; snapshot model/repository; config version. | PLAN-007 | P0 | Team Member 3 | 8 | W2 D1–5, W3 D1–3 | Fixed inputs produce reproducible snapshots matching source formulas and bounds. | Threshold validation/backtest dataset is **NEEDS CLARIFICATION**. |
+| PLAN-009 | REQ-018–REQ-021 | Recommendation Engine | Implement profile/technical filters, gates, direction, confidence, candidate selection, payload, and log. | Input adapters; filters; profile minimums; decision logic; confidence; recommendation repository. | PLAN-005, PLAN-008 | P0 | Team Member 3 | 6 | W3 D1–5 | Valid profile plus snapshot yields documented payload; invalid/stale data yields no recommendation with reason. | News contribution policy and exact handling of missing news are **NEEDS CLARIFICATION**. |
+| PLAN-010 | REQ-022–REQ-024 | News ingestion | Implement active source configuration, fetching, normalization, persistence, deduplication, and ticker linking. | Adapter envelope; fetch runs; retries; Arabic normalization; URL/title/content dedupe; alias resolver. | PLAN-001, PLAN-002, PLAN-003 | P0 | Team Member 4 | 7 | W1 D2–5, W2 D1–3 | At least one configured source can be ingested idempotently with provenance and ticker-link confidence. | Approved providers, licensing, and storage permissions are **NEEDS CLARIFICATION**. |
+| PLAN-011 | REQ-025–REQ-028, REQ-042 | News direction and retrieval | Implement evidence-backed direction-only analysis, PostgreSQL signals, Chroma references, tools, and downstream contracts. | Direction schema; evidence spans; positive/negative/neutral/unknown validation; chunk indexing; search/retrieval tools; recommendation/monitoring/explanation envelopes. | PLAN-010 | P0 | Team Member 4 | 7 | W2 D3–5, W3 D1–4 | News output contains direction/evidence and never an impact field or final recommendation; all tools are typed and tested. | Model choice, taxonomy, score policy, and lookback windows are **NEEDS CLARIFICATION**. |
+| PLAN-012 | REQ-027 | News API | Implement News Agent public and internal FastAPI routes. | Search; recent/company news; signal; analysis; recompute; validation; error/status mapping. | PLAN-003, PLAN-010, PLAN-011 | P0 | Team Member 4 | 3 | W3 D2–4 | OpenAPI routes validate requests, enforce auth, and return documented statuses. | Exact route versioning follows the source; deployment exposure is **NEEDS CLARIFICATION**. |
+| PLAN-013 | REQ-029–REQ-031, REQ-034 | Explanation Agent core | Implement recommendation, alert, follow-up, adapters, context builder, Arabic structured output, and evidence validation. | Input schemas; mode router; RAG adapter; source checks; output schema; disclaimer; fallback/error handling. | PLAN-001, PLAN-003, PLAN-009, PLAN-011, PLAN-014 | P0 | Team Member 5 | 6 | W2 D1–5, W3 D1 | Each prepared input produces schema-valid Arabic output without changing the source decision. | LLM, RAG store, and document availability are **NEEDS CLARIFICATION**. |
+| PLAN-014 | REQ-032–REQ-033 | Stock Q&A | Implement read-only snapshot tools and the fourth Explanation Agent mode. | Tool repository queries; orchestrator intent split; date/freshness; number grounding; language rejection; retry/fallback. | PLAN-008, PLAN-013 | P0 | Team Member 5 | 5 | W3 D1–4 | Q&A answers only from tool output; recommendation questions route separately; stale/missing data is explicit. | Exact Arabic recommendation-language lexicon is **NEEDS CLARIFICATION**. |
+| PLAN-015 | REQ-035–REQ-038 | Monitoring core | Implement deterministic rule engine, freshness, state, runs, alerts, cooldowns, and scheduler lock. | Rule schemas; repositories; evaluators; advisory lock; run lifecycle; dedupe; evidence JSONB; no-op dispatcher. | PLAN-002, PLAN-008 | P0 | Team Member 1 | 7 | W2 D1–5, W3 D1–2 | Scheduled cycle evaluates valid fresh data, persists runs/states/alerts, and prevents overlap. | Actual technical table names/columns are **NEEDS CLARIFICATION**. |
+| PLAN-016 | REQ-039 | Monitoring API | Implement authenticated monitoring rule, alert, acknowledgement, run, and health routes. | CRUD/list routes; owner filtering; acknowledge route; admin run route; schemas/tests. | PLAN-003, PLAN-015 | P0 | Team Member 1 | 3 | W3 D2–4 | Ownership and status codes match source specification; unauthorized records are not visible. | Admin role definition is **NEEDS CLARIFICATION**. |
+| PLAN-017 | REQ-040 | Integration contracts | Connect module service interfaces and reconcile all shared payloads. | Investor→Recommendation; Technical→Recommendation/Monitoring; News→Recommendation/Monitoring/Explanation; Monitoring→Explanation; date/status/version fields. | PLAN-005, PLAN-008, PLAN-009, PLAN-011, PLAN-013, PLAN-015 | P0 | Team Member 1 + all | 5 | W3 D2–5 | Contract tests pass for every documented direction and no module violates ownership boundaries. | Final schemas must be approved by module owners. |
+| PLAN-018 | REQ-041 | Testing | Implement unit, integration, API, contract, security, evaluation, and end-to-end tests. | Deterministic formula tests; API TestClient/httpx; DB integration; prompt-injection/SSRF; stale/missing cases; Q&A grounding. | PLAN-001–PLAN-017 incrementally | P0 | Team Member 5 + all | 7 | W1 D4–5, W2 D4–5, W3 D1–5 | Test suite runs in CI/local environment and all critical acceptance tests pass or are recorded as blockers. | CI environment and representative data set are **NEEDS CLARIFICATION**. |
+| PLAN-019 | REQ-003, REQ-041 | Final validation | Run integrated acceptance, bug fixing, migration review, and release validation. | Full smoke test; API/OpenAPI review; migration dry run; security review; fix critical bugs; document known limitations. | PLAN-017, PLAN-018 | P0 | All, coordinated by Team Member 1 | 5 | W3 D4–5 | Scope coverage is signed off; unresolved blockers are explicit; no silent scope reduction occurs. | Production deployment target is **NEEDS CLARIFICATION**. |
+
+## 4. 3-Week Schedule
+
+### Week 1 — Foundation and first vertical slices
+
+| Tasks | Subtasks | Dependencies | Assignments | Expected deliverables |
 |---|---|---|---|---|
-| **M1 — Platform & integration lead** | Core app, auth seam, contracts, migrations coordination, orchestration, CI/containerization, integration and release | Foundation, shared contracts, API scaffolding, CI | `/v1/chat` thin routing; integrate modules; unblock contracts | End-to-end tests, hardening, deployment/demo, fixes |
-| **M2 — Data & Technical Engine** | Stock universe/price ingestion seam, EGX calendar, indicators/scoring, snapshots, scheduler | Data model, calendar, input/quality pipeline | Indicator/scoring implementation and snapshot job | Backfill/correction behavior, performance, contract tests |
-| **M3 — Investor Agent** | Profile schemas/repository, Arabic interview, deterministic risk assessment, HITL, audit | Profile schema/migrations and API skeleton | Interview workflow, validation, confirmation and audit | Integration with recommendation, safety/persona tests, polish |
-| **M4 — Recommendation & Explanation** | Recommendation rules/log, explanation modes/validators, read-only snapshot tools | Recommendation contract/rules design and pure-function scaffold | Decision engine and reproducible output; explanation recommendation mode | Alert/follow-up/Stock Q&A modes; explanation validators and integration |
-| **M5 — Monitoring & Quality** | Monitoring models/rules/job/API, test strategy, security/ownership and operational checks | Rule schema/evaluator design; test harness and cross-contract review | Monitoring repositories/evaluators/job and integration tests | API, scheduling/dedupe, ownership/security tests, acceptance verification |
+| PLAN-001–PLAN-003 | FastAPI skeleton, settings, DB, migrations, auth, errors, health | None | TM1, TM5 | Running app, common schemas, protected route examples, database migration baseline |
+| PLAN-004 | Investor state/extraction skeleton | PLAN-001–003 | TM2 | Interview graph and validation path |
+| PLAN-007 | Price ingestion/data-quality skeleton | PLAN-001–002 | TM3 | OHLCV contract, quality flags, repository boundary |
+| PLAN-010 | News source envelope/ingestion skeleton | PLAN-001–003 | TM4 | Active source adapter boundary, normalized article schema, idempotency design |
+| PLAN-018 (partial) | Foundation unit/API tests | In parallel | TM5 + all | Health/auth/session tests |
 
-**Shared ownership rules:** M1 owns merge/release decisions and keeps the integration branch green. Each module owner owns its code, unit tests, migration, and module-level docs. All shared Pydantic contracts are reviewed by M1 plus producer and consumer owners. One Alembic history is maintained: each owner prepares a migration proposal; M1 coordinates merge order and resolves revision conflicts. No member edits another module’s repository internals to bypass its contract.
+**Week 1 dependencies:** Common schemas and database sessions must exist before module repositories. Authentication must exist before protected route testing. The actual shared table names remain a clarification item.
 
-## 3. Work breakdown and traceability
+### Week 2 — Core module implementation
 
-Each task has an implementation ID (`IMP-xx`). User stories live in [finmind_user_stories.md](./finmind_user_stories.md), where each story has a unique `US-xx` and references these task IDs. The story file also lists acceptance criteria and inter-story dependencies.
+| Tasks | Subtasks | Dependencies | Assignments | Expected deliverables |
+|---|---|---|---|---|
+| PLAN-005–PLAN-006 | Investor confirmation, audit, and memory | PLAN-004 | TM2 | Confirmed profile API, audit trail, memory adapter boundary |
+| PLAN-008 | Indicators, scoring, regime, snapshots | PLAN-007 | TM3 | Deterministic technical snapshot pipeline |
+| PLAN-009 (start) | Recommendation filters/gates | PLAN-005, PLAN-008 | TM3 | Recommendation service skeleton and payload contract |
+| PLAN-010 (finish) | News normalization, dedupe, ticker linking | PLAN-010 start | TM4 | Persisted article/link records and tests |
+| PLAN-011 (start) | Direction/evidence and retrieval | PLAN-010 | TM4 | Direction-only analysis contract and retrieval skeleton |
+| PLAN-013 (start) | Explanation prepared-input modes | PLAN-009/011 contracts | TM5 | Recommendation/alert explanation schemas and validator |
+| PLAN-015 (start) | Monitoring repositories/rule engine | PLAN-002, PLAN-008 | TM1 | Rule schemas and deterministic evaluator skeleton |
+| PLAN-018 (partial) | Module unit/integration tests | In parallel | All | Formula, schema, and repository tests |
 
-### Week 1 — Foundation, contracts, and parallel module scaffolds
+### Week 3 — Integration, Q&A, APIs, testing, and hardening
 
-| ID | Days | Owner(s) | Deliverable / done condition | Story links |
-|---|---:|---|---|---|
-| **IMP-01** | D1–D2 | M1, all | Agree MVP scope, decisions, interfaces, Definition of Done; record open assumptions (price source, auth provider seam, LLM provider/model, EGX calendar/source). Freeze API/error envelope and module ownership. | US-01–US-08 |
-| **IMP-02** | D1–D3 | M1 | Modular-monolith repo scaffold matching spec; FastAPI app factory/lifespan, settings, structured logging, request ID, common errors, auth `CurrentUser` seam, health endpoints, `.env.example`, lint/type/test CI. | US-01 |
-| **IMP-03** | D1–D4 | M1 + module owners | Shared Pydantic contracts: `StockUniverseRow`, `TechnicalSnapshot`, `InvestorProfile`, `RecommendationOutput`, `AlertRecord`; define stable interfaces/Protocols and contract fixtures. | US-02–US-08 |
-| **IMP-04** | D2–D5 | M1 + M2 | PostgreSQL/Alembic baseline, stock universe and OHLCV table/import seam, UTC/trading-date conventions, EGX calendar interface, test DB strategy, Docker Compose with healthy DB and migration job. Seed deterministic fixtures. | US-01, US-02 |
-| **IMP-05** | D2–D5 | M2 | Technical ingestion and quality-check scaffold: input OHLCV contract; dedupe/order checks, session gaps, minimum 200 sessions, stale status, zero-volume reliability, correction logging. No silent interpolation. | US-02 |
-| **IMP-06** | D2–D5 | M3 | Investor profile schema/repository/API skeleton and migration: partial unique active-profile index, versions, exclusions by canonical sector code, audit log, auth-derived user ID. Define draft/checkpoint persistence seam. | US-03 |
-| **IMP-07** | D2–D5 | M4 | Recommendation pure-function scaffold/config tables; formalize gate/blocker/output JSON and log schema including `profile_version`, `config_version`, `snapshot_id`, full `output_json`. Unit test fixtures. | US-04 |
-| **IMP-08** | D2–D5 | M5 | Monitoring schema/evaluator interfaces and test plan; rule parameter schemas, alert evidence contract, UTC-day unique-index migration proposal, ownership query patterns. | US-05 |
-| **IMP-09** | D4–D5 | M1 + M2/M4/M5 | Integration checkpoint: first app boots, migrations run, typed contracts import, mock snapshot flows through a contract test; confirm config version and freshness semantics. Blocker list reviewed by all. | US-01, US-02, US-04, US-05 |
+| Tasks | Subtasks | Dependencies | Assignments | Expected deliverables |
+|---|---|---|---|---|
+| PLAN-009 (finish) | Recommendation confidence/logging | PLAN-008, profile contract | TM3 | Complete recommendation payload and audit log |
+| PLAN-011–PLAN-012 | News direction, retrieval, FastAPI routes, downstream contracts | PLAN-010 | TM4 | Active News Agent API and integration envelopes |
+| PLAN-013–PLAN-014 | Explanation integration and Stock Q&A | PLAN-008, PLAN-009, PLAN-011 | TM5 | Four modes, read-only tools, date/number/recommendation-language validation |
+| PLAN-015–PLAN-016 | Monitoring scheduler, lock, alerts, API | PLAN-008, PLAN-003 | TM1 | Complete monitoring cycle and authenticated APIs |
+| PLAN-017 | Cross-module integration | All core tasks | TM1 + all | Contract tests and end-to-end service path |
+| PLAN-018 | Full testing/security/evaluation | All available modules | TM5 + all | Test report, defect list, security findings |
+| PLAN-019 | Integration, bug fixing, final validation | PLAN-017–018 | All | Release candidate, migration review, explicit blockers and known limitations |
 
-**Week 1 exit gate:** CI passes; app boots with PostgreSQL; migrations are reproducible; contracts and protocol boundaries are approved; sample data can be loaded; no direct cross-module repository dependencies. If this gate is missed, Week 2 feature work should remain behind module interfaces until the foundation is stable.
+The schedule does not remove scope to fit three weeks. If the team cannot complete all work, incomplete capabilities must remain visible in the risk/blocker list rather than being silently deferred or redesigned.
 
-### Week 2 — Core capabilities and first integrated paths
+## 5. Team of 5 Work Allocation
 
-| ID | Days | Owner(s) | Deliverable / done condition | Story links |
-|---|---:|---|---|---|
-| **IMP-10** | D6–D9 | M2 | Indicators and scoring: SMA20/50/200, RSI14, MACD, volume ratio/SMA, ATR14/ATR%, Bollinger width, ADX regime, support/resistance, family scores and regime-weighted setup score. Formula/config versioned; deterministic fixtures cover edge cases. | US-02 |
-| **IMP-11** | D8–D10 | M2 + M1 | `technical_snapshots` migration/repository and scheduled/manual technical run seam; one row per ticker/date/config version; active config and freshness reader; corrected historical data triggers controlled recompute/versioning. | US-02 |
-| **IMP-12** | D6–D10 | M3 | LangGraph (or specification-compatible stateful workflow) interview: Arabic questions for goal, horizon, capacity/tolerance, experience/knowledge, constraints; completeness and contradictions; safety cap for low capacity; resumable checkpoint. Use FakeLLM in tests. | US-03 |
-| **IMP-13** | D9–D10 | M3 + M1 | HITL summary/confirm flow and transactional persistence: explicit confirmation only; deactivate old active version, insert new version, audit immutable change; profile GET/PATCH and user ownership checks. | US-03 |
-| **IMP-14** | D6–D10 | M4 | Rule-based recommendation engine: data quality, liquidity percentile formula, exclusions, profile/horizon thresholds, blockers, AVOID/WATCH/BUY/EXCLUDED/NO_RECOMMENDATION, confidence and candidate selection. No LLM in decision path. | US-04 |
-| **IMP-15** | D9–D10 | M4 + M2/M3 | Recommendation endpoint/log: load active valid snapshot and confirmed profile via Protocols, produce full required output, store reproducible versions and output JSON; tests cover no profile/no snapshot/stale/profile exclusion. | US-02, US-03, US-04 |
-| **IMP-16** | D6–D10 | M5 | Deterministic monitoring evaluators for RSI threshold, price/MA crossing, volatility threshold, setup-score change; first-evaluation rules, missing-input errors, session freshness behavior. Pure unit tests. | US-05 |
-| **IMP-17** | D9–D10 | M5 + M2 | Snapshot/state/run repositories and cycle skeleton; reads active config + valid snapshots through snapshot interface, writes run counts and evidence fields, advisory lock design reviewed. | US-02, US-05 |
-| **IMP-18** | D10 | All | Week 2 integration demo: generate snapshot → save/confirm profile → request and persist recommendation; run evaluator against fixture snapshot. Resolve any contract mismatches before Week 3. | US-02–US-05 |
+| Team member | Planned primary allocation | Supporting allocation | Basis |
+|---|---|---|---|
+| Team Member 1 | Platform foundation and Monitoring Service | Integration coordination and final validation | Planning decision based on dependency centrality; not specified by source |
+| Team Member 2 | Investor Agent | Profile contract integration and memory | Planning decision; not specified by source |
+| Team Member 3 | Technical Engine and Recommendation Engine | Technical contract tests | Planning decision; not specified by source |
+| Team Member 4 | Active News Agent | News downstream contracts and API | Planning decision; not specified by source |
+| Team Member 5 | Explanation Agent and testing | Security/API tests and final QA | Planning decision; not specified by source |
 
-**Week 2 exit gate:** A deterministic vertical slice works from fixture OHLCV through a stored snapshot and logged recommendation for a confirmed profile. Monitoring evaluator unit tests pass. Investor profile cannot become active without confirmation. No unresolved breaking contract changes.
+All five members participate in PLAN-017–PLAN-019. No skill, seniority, or role is assumed from the member labels.
 
-### Week 3 — Monitoring APIs, explanations, orchestration, hardening
+## 6. Dependencies
 
-| ID | Days | Owner(s) | Deliverable / done condition | Story links |
-|---|---:|---|---|---|
-| **IMP-19** | D11–D12 | M5 | Complete monitoring cycle: advisory lock, freshness skip, rule evaluation, state upsert, cooldown + unique-index dedupe, alert evidence with snapshot/date/config fields, run status/counts, startup stuck-run sweep. | US-05 |
-| **IMP-20** | D11–D12 | M5 + M1 | Monitoring rules/alerts API with auth-derived ownership, create/list/get/update allowed fields/soft-delete, acknowledge alert, admin run view and health status; real PostgreSQL integration tests. | US-05 |
-| **IMP-21** | D11–D13 | M4 | Explanation modes: recommendation first (full engine output), alert (alert + old/new snapshots), follow-up on stored IDs, stock Q&A using allowlisted read-only tools and bounded queries; no profile access in Q&A. | US-04, US-05, US-06, US-07 |
-| **IMP-22** | D12–D13 | M4 + M1 | Explanation output validation: structured schema, every figure grounded in supplied tool/output data, data date stated for Q&A, no recommendation language in Q&A (English/Arabic), disclaimer, missing/stale handling, one bounded retry then template fallback. | US-06, US-07 |
-| **IMP-23** | D11–D13 | M1 + M3/M4 | Minimal orchestrator `/v1/chat`: intent routing for profile, recommendation, follow-up, alert explanation, stock Q&A and concept questions; ambiguous ticker asks clarification; “should I buy?” routes to recommendation; mixed message splits into Q&A + recommendation when feasible. | US-03, US-04, US-06, US-07 |
-| **IMP-24** | D13 | M1 + M2 | Scheduler and runtime integration: configured EGX-local schedule, calendar gate, one scheduler instance in MVP, technical and monitoring jobs; safe shutdown, health/readiness, retries/locks as specified. | US-01, US-02, US-05 |
-| **IMP-25** | D13–D14 | M5 + all | Cross-module contract/security test pass: technical→recommendation, profile→recommendation, recommendation→explanation, snapshot→monitoring→alert→explanation, mixed intent, stale/missing data, ownership isolation, prompt injection, no secrets in logs. | US-01–US-08 |
-| **IMP-26** | D14 | M1 + all | Docker acceptance: clean checkout → Compose build/up → Alembic upgrade → health 200; seed/demo command; install/test docs, API OpenAPI review, known limitations and deferred News documented. | US-01–US-08 |
-| **IMP-27** | D15 | All | Stabilization and demo; close P0 defects, validate story acceptance, freeze release branch, handover/runbook, final scope and risk review. | US-01–US-08 |
+1. PLAN-001 must precede all FastAPI route work.
+2. PLAN-002 must precede repository, migration, and persistence work.
+3. PLAN-003 must precede protected API acceptance tests.
+4. Investor confirmation (PLAN-005) must precede Recommendation Engine profile consumption (PLAN-009).
+5. Price ingestion and quality validation (PLAN-007) must precede Technical Engine snapshots (PLAN-008).
+6. Technical snapshots (PLAN-008) must precede Recommendation, Stock Q&A, and Monitoring work.
+7. News ingestion/linking (PLAN-010) must precede direction/retrieval (PLAN-011).
+8. Recommendation and News contracts must be available before complete Explanation integration.
+9. Monitoring contract alignment requires confirmation of Technical Engine table names and columns.
+10. Contract tests and final validation depend on all participating module schemas being stable.
 
-**Week 3 exit gate:** All committed stories pass acceptance or are explicitly marked as a release-blocking gap; app runs from clean setup; data/recommendation outputs are reproducible and versioned; monitoring alerts are deduped; Q&A is read-only and non-recommending; all user-facing financial explanations include disclaimer and limitations.
+## 7. Risks and Blockers
 
-## 4. Dependency map and collaboration
+| ID | Risk/blocker | Effect | Mitigation | Status |
+|---|---|---|---|---|
+| RISK-001 | Three-week window versus full scope | Full production readiness may exceed capacity. | Build vertical slices; report incomplete work explicitly; do not reduce scope silently. | Open |
+| RISK-002 | News providers, permissions, and licensing unspecified | Ingestion and storage may be blocked. | Confirm approved sources and storage rights before production ingestion. | NEEDS CLARIFICATION |
+| RISK-003 | Actual shared database table names/columns unspecified | Monitoring and integration queries may not compile. | Isolate repositories; confirm OD-01/OD-02 before final implementation. | NEEDS CLARIFICATION |
+| RISK-004 | LLM, LangGraph/LangMem, RAG, embedding, and Chroma deployment choices unspecified | Agent features cannot be validated end to end. | Keep provider adapters; use contract tests; record unavailable dependencies explicitly. | NEEDS CLARIFICATION |
+| RISK-005 | Authentication/identity provider unspecified | Protected APIs cannot be finalized. | Implement dependency boundary; confirm JWT/identity policy. | NEEDS CLARIFICATION |
+| RISK-006 | News direction aggregation policy/lookback unspecified | Recommendation integration may be ambiguous. | Do not invent coefficients; obtain policy decision. | NEEDS CLARIFICATION |
+| RISK-007 | Representative EGX data/evaluation set unspecified | Thresholds and Arabic classification quality cannot be validated. | Require a reviewed dataset and document limitations. | NEEDS CLARIFICATION |
+| RISK-008 | Source contains illustrative alert/recommendation fields | Contract mismatch may occur. | Replace illustrative payloads with approved shared schemas during PLAN-017. | Open |
 
-```text
-IMP-01/02/03/04 (foundation + contracts + database)
-       ├── IMP-05 → IMP-10 → IMP-11 ───────────────┐
-       ├── IMP-06 → IMP-12 → IMP-13 ───────┐       │
-       ├── IMP-07 → IMP-14 → IMP-15 ←──────┴───────┘
-       └── IMP-08 → IMP-16 → IMP-17 → IMP-19 → IMP-20
-                                              │             │
-                         IMP-15 ──────────────┴→ IMP-21 → IMP-22
-                         IMP-20/alerts ─────────→ IMP-21
-                         IMP-02/03 + module APIs → IMP-23
-                         all modules → IMP-24/25/26/27
-```
+## 8. Assumptions and Clarifications
 
-**Key handoffs:**
+### A. Explicitly stated in the source specification
 
-- M2 publishes `TechnicalSnapshot` and `SnapshotReader`; consumers must use active `config_version`, valid data, and EGX-session freshness rules.
-- M3 publishes only confirmed `InvestorProfile` versions. Derived recommendation thresholds remain owned by the Recommendation Engine config, not stored profile values.
-- M4 consumes profile/snapshot contracts and publishes the complete `RecommendationOutput`, including profile/config versions and `what_would_change_it`.
-- M5 consumes snapshot contracts only; alerts include `snapshot_id`, `trading_date`, `previous_trading_date`, and `config_version` in evidence.
-- M4 Explanation consumes stored recommendation/alert IDs and checks ownership server-side. Q&A receives no investor profile and can only call bounded read-only snapshot tools.
-- M1 owns orchestration and integration; modules call in-process services via interfaces, not each other’s repositories.
+- FastAPI is the project backend boundary.
+- PostgreSQL is the canonical persistent store.
+- ChromaDB is a retrieval index, not the source of truth.
+- The five modules and their boundaries are retained.
+- News Agent is active and direction-only; it does not make final recommendations.
+- Explanation Agent has four modes, including Stock Q&A with read-only tools.
+- Monitoring is deterministic and does not use an LLM.
+- The project uses async Python components and the specified FastAPI/PostgreSQL stack.
+- Missing, stale, partial, and unavailable data must remain distinguishable.
 
-## 5. Ceremony and operating rhythm
+### B. Planning decisions
 
-- **Daily (15 min):** each member reports yesterday/today/blockers; M1 updates dependency board and identifies contract changes.
-- **D1 planning (60–90 min):** confirm scope, assignment, branches, code style, Definition of Done, data/API assumptions.
-- **D5 and D10 integration demos (30 min):** demonstrate only merged, running code; agree whether scope needs trimming.
-- **D14 release candidate:** feature freeze; only bug fixes and acceptance gaps after this point.
-- **Pull requests:** small, reviewed by module owner plus one other member; migration and contract changes require M1 plus affected producer/consumer review; CI required.
-- **Shared fixtures:** deterministic price histories and test users in `tests/fixtures`; never use fabricated live-market results in user-facing demo without labeling them test data.
+- The five generic team members are assigned according to dependencies and workload.
+- PLAN-001–PLAN-003 are scheduled first because all modules use them.
+- Technical and news implementation run in parallel after their shared contracts exist.
+- Team Member 1 coordinates integration because the source does not specify a coordinator.
+- Efforts, priorities, week/day allocations, and vertical-slice sequencing are estimates, not requirements.
 
-## 6. Risks, assumptions, and mitigations
+### C. NEEDS CLARIFICATION
 
-| Risk / assumption | Impact | Mitigation / decision needed |
-|---|---|---|
-| Full breadth in three weeks is ambitious for five people | High | Ship vertical slice in Week 2; defer LangMem, profile drift, universe-wide scan, advanced backfill, production auth/provider integration if needed. Keep interfaces. |
-| Reliable EGX OHLCV source and historical data may not be ready | High | Decide source and licensing on D1; use a clearly labeled local fixture for tests/demo; isolate provider adapter; never imply fixture data is live. |
-| Auth and LLM provider/model are open in spec | High | Implement `verify_token` and `LLMClient` seams with FakeLLM; choose real provider early only if credentials are available. No secrets in repo/logs. |
-| EGX calendar, session close, and schedule require verified config | High | Implement calendar abstraction and configurable schedule; validate exchange holidays/closing time before enabling live scheduled run. |
-| Cross-module migrations can conflict | Medium | Single Alembic history coordinated by M1; module owners submit revisions early; avoid parallel edits to migration head. |
-| Indicator edge cases and formula correctness | High | Pure functions, hand-checkable fixtures, independent code review; preserve raw inputs, config versions, and quality flags. |
-| LLM-generated financial text can introduce unsupported claims | High | Structured schemas, evidence-grounding validators, tool allowlist, bounded retry/template fallback, disclaimer and no-decision-changing policy. |
-| Production deployment/security not fully specified (e.g. auth provider) | Medium | MVP auth seam/stub only, clearly documented; do not market as production-ready; enforce ownership tests and safe error handling. |
+- Names, skills, and availability of the five team members.
+- Authentication provider, JWT claims, roles, and deployment environment.
+- Actual `users` table and ownership contract.
+- Approved news providers, source permissions, APIs/RSS, and full-text storage rights.
+- Exchange calendar and corporate-action policy.
+- Actual `stock_prices`, `technical_indicators`, `technical_scores`, and snapshot table names/columns.
+- LLM provider/model, LangGraph/LangMem versions and deployment, embedding model, Chroma mode, and RAG corpus availability.
+- Final news taxonomy, lookback windows, direction aggregation policy, missingness behavior in Recommendation Engine, and validation thresholds.
+- Exact Arabic recommendation-language lexicon for Stock Q&A.
+- Whether Dashboard/UI work is part of this backend implementation.
+- CI, test database, representative market dataset, and production deployment target.
 
-## 7. Deferred work (not a hidden commitment)
+## 9. Recommended Changes — NOT PART OF THE BASE PLAN
 
-- Arabic News Agent, source permissions, ingestion/classification, signals, Chroma/vector search, and news-driven monitoring/recommendations.
-- Portfolio construction, position sizing, capital/max-loss calculations, holdings-based HOLD/REDUCE.
-- Email, push, SMS delivery; monitoring dispatcher remains no-op.
-- Production multi-worker split, Redis shared rate limiting, external identity-provider integration, and operational SLOs.
-- Full LangMem preference/drift tracking and dashboard/frontend, unless a working UI already exists.
+The following are not requirements and are not applied to the plan:
 
-## 8. Traceability index
+1. Add a formal product owner or technical lead role.
+2. Add a delivery milestone after week 3 for production hardening and model/data evaluation.
+3. Freeze cross-module schemas before parallel implementation.
+4. Decide a single deployment and authentication target before API hardening.
+5. Create a reviewed Arabic/English evaluation dataset before relying on news direction or Stock Q&A in production.
 
-| Story | Summary | Implementation tasks |
-|---|---|---|
-| US-01 | Run FinMind reliably | IMP-01–04, IMP-09, IMP-24–27 |
-| US-02 | Ingest prices and generate technical snapshots | IMP-03–05, IMP-09–11, IMP-15, IMP-17, IMP-24–25 |
-| US-03 | Create and confirm investor profile | IMP-03, IMP-06, IMP-12–13, IMP-15, IMP-23, IMP-25–27 |
-| US-04 | Generate reproducible recommendation | IMP-03, IMP-07, IMP-09, IMP-14–15, IMP-21–23, IMP-25–27 |
-| US-05 | Monitor technical conditions and manage alerts | IMP-03, IMP-08–09, IMP-16–20, IMP-21, IMP-24–27 |
-| US-06 | Explain a recommendation or alert | IMP-03, IMP-19–23, IMP-25–27 |
-| US-07 | Ask stock/concept questions safely | IMP-03, IMP-11, IMP-21–23, IMP-25–27 |
-| US-08 | Protect data and preserve traceability | IMP-02–04, IMP-06–08, IMP-11, IMP-13–15, IMP-19–27 |
-
-**Companion file:** [FinMind User Stories](./finmind_user_stories.md).
+These recommendations do not change the base scope or remove any source requirement.
