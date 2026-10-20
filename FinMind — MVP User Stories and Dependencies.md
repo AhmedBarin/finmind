@@ -1,235 +1,407 @@
-# FinMind — MVP User Stories and Dependencies
-
-**Companion plan:** [FinMind Three-Week Implementation Plan](./finmind_implementation_plan.md)  
-**Specification basis:** FinMind consolidated specification v0.3.0-consolidated (2026-10-17)  
-**MVP scope:** Three-week implementation of the in-scope modules. News Agent and other deferred capabilities are excluded as documented in the implementation plan.
-
-## How to read this file
-
-- Each story has a stable **`US-xx`** identifier.
-- **Implementation links** point to `IMP-xx` task IDs in `finmind_implementation_plan.md`; those task entries reciprocally list their story IDs.
-- **Depends on** means the story’s acceptance should not be considered complete until those prerequisite stories/capabilities are available. Some dependencies can be developed in parallel, but the integration contract must exist.
-- Each story includes acceptance criteria in observable Given/When/Then form.
-
-## Story map — how the parts work together
-
-```text
-US-01 Platform foundation
-  └── US-02 Price data + technical snapshots
-        ├── US-04 Profile-aware recommendations ← US-03 Confirmed investor profile
-        ├── US-05 Monitoring rules + alerts
-        └── US-07 Read-only stock Q&A
-              └── US-06 Explanation modes consume US-04 recommendations / US-05 alerts
-
-US-08 Security, auditability, and safe behavior applies across all stories.
-```
-
-The technical engine computes snapshots once per stock/trading day, independent of the user. The Investor Agent collects and persists a confirmed profile but does not calculate or recommend. The Recommendation Engine is the only component that combines user profile with technical data and makes the deterministic BUY/WATCH/AVOID/EXCLUDED/NO_RECOMMENDATION decision. Monitoring evaluates user rules against snapshots and creates structured alerts without calling the Recommendation Engine. Explanation interprets already-computed recommendations or alerts; Stock Q&A reads snapshots only and must not recommend. Orchestration routes the question to the appropriate path.
-
----
-
-## US-01 — Run the FinMind MVP service
-
-**As a** developer/operator, **I want** to start FinMind with its database, migrations, health checks, and required configuration, **so that** the team has a repeatable environment for development, tests, and demonstration.
-
-**Priority:** Must  
-**Primary owner:** M1 — Platform & integration lead  
-**Depends on:** None  
-**Implementation links:** [IMP-01](./finmind_implementation_plan.md#week-1--foundation-contracts-and-parallel-module-scaffolds), [IMP-02](./finmind_implementation_plan.md#week-1--foundation-contracts-and-parallel-module-scaffolds), [IMP-04](./finmind_implementation_plan.md#week-1--foundation-contracts-and-parallel-module-scaffolds), [IMP-09](./finmind_implementation_plan.md#week-1--foundation-contracts-and-parallel-module-scaffolds), [IMP-24](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening), [IMP-25](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening), [IMP-26](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening), [IMP-27](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening).
-
-### Acceptance criteria
-
-1. **Given** a clean checkout and configured environment variables, **when** the developer runs the documented Docker Compose command, **then** PostgreSQL becomes healthy, migrations run once, and the API starts.
-2. **Given** a running service, **when** `/health/live` and readiness/health endpoints are requested, **then** they return the documented status without exposing secrets or stack traces.
-3. **Given** an invalid/missing secret configuration, **when** startup or a protected request needs it, **then** FinMind fails safely with a clear operational error and does not print secret values.
-4. **Given** the MVP configuration, **when** the service starts, **then** only one scheduler instance is enabled and News/Chroma routes/jobs remain disabled.
-5. **Given** the documented test command, **when** run in CI, **then** lint and automated tests execute against deterministic fixtures.
-
-**Collaborates with:** US-02 provides the technical scheduler workload; US-05 provides monitoring scheduler workload; all modules depend on the foundation and common error/config conventions.
-
----
-
-## US-02 — Produce versioned technical snapshots from market data
-
-**As a** FinMind user and downstream service, **I want** a quality-checked technical snapshot for a ticker and EGX trading date, **so that** recommendations, monitoring, and explanations use the same reproducible analysis.
-
-**Priority:** Must  
-**Primary owner:** M2 — Data & Technical Engine  
-**Depends on:** US-01  
-**Implementation links:** [IMP-03](./finmind_implementation_plan.md#week-1--foundation-contracts-and-parallel-module-scaffolds), [IMP-04](./finmind_implementation_plan.md#week-1--foundation-contracts-and-parallel-module-scaffolds), [IMP-05](./finmind_implementation_plan.md#week-1--foundation-contracts-and-parallel-module-scaffolds), [IMP-09](./finmind_implementation_plan.md#week-1--foundation-contracts-and-parallel-module-scaffolds), [IMP-10](./finmind_implementation_plan.md#week-2--core-capabilities-and-first-integrated-paths), [IMP-11](./finmind_implementation_plan.md#week-2--core-capabilities-and-first-integrated-paths), [IMP-15](./finmind_implementation_plan.md#week-2--core-capabilities-and-first-integrated-paths), [IMP-17](./finmind_implementation_plan.md#week-2--core-capabilities-and-first-integrated-paths), [IMP-24](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening), [IMP-25](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening).
-
-### Acceptance criteria
-
-1. **Given** OHLCV rows for a known ticker, **when** the technical run executes for a trading date, **then** it validates and orders/deduplicates input and records quality problems rather than silently interpolating gaps.
-2. **Given** fewer than 200 sessions or stale/missing/flagged input, **when** a snapshot is requested by a consumer, **then** the snapshot marks the correct `data_quality` and no downstream recommendation treats it as valid.
-3. **Given** at least 200 valid sessions, **when** calculations run, **then** required MVP indicators and technical families are calculated deterministically from the configured consistent price series; the output includes ADX regime, risk metrics, family scores, and ranking-only `setup_score`.
-4. **Given** a ticker/date/config version, **when** a snapshot is stored, **then** it is uniquely identified by `(ticker, trading_date, config_version)` and prior versions are not silently overwritten.
-5. **Given** a consumer calls the snapshot reader, **when** it requests latest data, **then** the reader selects the active `config_version` and returns valid data with trading-session freshness metadata.
-6. **Given** a user asks for current stock information, **when** the snapshot is missing/stale/invalid, **then** the returned status states why and does not invent a current value.
-
-**Collaborates with:** US-04 consumes snapshot contracts; US-05 reads the same snapshots for rules; US-06 alert explanations may fetch old/new snapshots; US-07 uses read-only snapshot tools. Technical Engine must not depend on profiles or user queries.
-
----
-
-## US-03 — Create, review, and confirm an investor profile
-
-**As an** investor, **I want** an Arabic guided interview that captures my goal, horizon, risk capacity/tolerance, experience, and restrictions, **so that** later recommendations can apply my confirmed preferences transparently.
-
-**Priority:** Must  
-**Primary owner:** M3 — Investor Agent  
-**Depends on:** US-01  
-**Implementation links:** [IMP-03](./finmind_implementation_plan.md#week-1--foundation-contracts-and-parallel-module-scaffolds), [IMP-06](./finmind_implementation_plan.md#week-1--foundation-contracts-and-parallel-module-scaffolds), [IMP-12](./finmind_implementation_plan.md#week-2--core-capabilities-and-first-integrated-paths), [IMP-13](./finmind_implementation_plan.md#week-2--core-capabilities-and-first-integrated-paths), [IMP-15](./finmind_implementation_plan.md#week-2--core-capabilities-and-first-integrated-paths), [IMP-23](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening), [IMP-25](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening), [IMP-26](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening), [IMP-27](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening).
-
-### Acceptance criteria
-
-1. **Given** an authenticated user starts an interview, **when** they answer questions, **then** the workflow collects required dimensions, asks follow-ups for missing/contradictory answers, and can resume an abandoned session.
-2. **Given** a low financial capacity signal (e.g. emergency funds needed soon or high debt), **when** the requested risk profile is Aggressive, **then** the system applies the Moderate cap, explains the trade-off, and gives the user a clear review/override path consistent with the specification.
-3. **Given** the profile is complete, **when** the agent presents the summary card, **then** the summary clearly shows extracted profile values and requires explicit user confirmation.
-4. **Given** a user has not confirmed the card, **when** any service requests the active profile, **then** no draft is returned as active or used for recommendations.
-5. **Given** the user confirms or updates the profile, **when** persistence occurs, **then** the old active profile is deactivated, a new `profile_version` is created, and an audit record is written atomically.
-6. **Given** any profile endpoint is called, **when** the authenticated identity is resolved, **then** `user_id` comes from the token/session and a user cannot read or mutate another user’s profile.
-7. **Given** the user asks for a stock recommendation during the interview, **when** the request is processed, **then** the interview agent does not make the recommendation and directs the request to the recommendation flow.
-
-**Collaborates with:** US-04 reads only the active, confirmed profile through `ProfileReader`; it owns no technical calculations or recommendations. US-08 governs PII minimization and audit behavior.
-
----
-
-## US-04 — Receive a reproducible, profile-aware stock recommendation
-
-**As an** investor with an active confirmed profile, **I want** a deterministic recommendation for a ticker or a ranked scan, **so that** I can see whether technical gates fit my profile and understand what blocks or could change the result.
-
-**Priority:** Must (single-ticker); Should (universe scan if time allows)  
-**Primary owner:** M4 — Recommendation & Explanation  
-**Depends on:** US-02 and US-03  
-**Implementation links:** [IMP-03](./finmind_implementation_plan.md#week-1--foundation-contracts-and-parallel-module-scaffolds), [IMP-07](./finmind_implementation_plan.md#week-1--foundation-contracts-and-parallel-module-scaffolds), [IMP-09](./finmind_implementation_plan.md#week-1--foundation-contracts-and-parallel-module-scaffolds), [IMP-14](./finmind_implementation_plan.md#week-2--core-capabilities-and-first-integrated-paths), [IMP-15](./finmind_implementation_plan.md#week-2--core-capabilities-and-first-integrated-paths), [IMP-21](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening), [IMP-22](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening), [IMP-23](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening), [IMP-25](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening), [IMP-26](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening), [IMP-27](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening).
-
-### Acceptance criteria
-
-1. **Given** an authenticated user with a confirmed active profile and a valid, fresh snapshot, **when** a recommendation is requested, **then** the engine combines only that user’s profile with the shared technical snapshot and returns one of `BUY`, `WATCH`, `AVOID`, `EXCLUDED`, or `NO_RECOMMENDATION`.
-2. **Given** the snapshot is invalid/stale or the user has no confirmed profile, **when** a recommendation is requested, **then** it returns an explicit safe status/reason and does not infer missing data or proceed with another user’s profile.
-3. **Given** liquidity rank, restrictions, horizon, risk and technical family scores, **when** gates are evaluated, **then** the engine applies the specified liquidity percentile semantics (`rank >= 100 - top_share`), sector/ticker exclusions, family minimums, volatility limits, blockers, and AVOID conditions.
-4. **Given** a preferred sector, **when** eligible candidates are ranked, **then** preference is only a tie-break, not an exclusion rule.
-5. **Given** the output is generated, **when** it is persisted, **then** the recommendation log records ticker/date, snapshot ID, `config_version`, `profile_version`, decision, blockers, confidence, and the complete output JSON needed for later explanation.
-6. **Given** the same versioned snapshot, profile and configuration are supplied again, **when** the pure decision function runs, **then** the decision and reasons are reproducible; an LLM is not used to decide.
-7. **Given** the result is shown to a user, **when** the setup score appears, **then** it is described as a ranking/display score, never as probability of profit, and the standard disclaimer is present.
-
-**Collaborates with:** US-02 supplies shared snapshot data; US-03 supplies profile. US-06 explains the stored full output but cannot alter the decision. US-07 routes “should I buy?” into this story’s recommendation flow rather than answering from Q&A.
-
----
-
-## US-05 — Configure monitoring rules and review technical alerts
-
-**As an** investor, **I want** to create personal technical monitoring rules and receive stored alerts when the configured condition triggers, **so that** I can track stocks without the monitoring service making investment decisions.
-
-**Priority:** Must (rules, deterministic evaluation, alert persistence/API); Could (external delivery, deferred)  
-**Primary owner:** M5 — Monitoring & Quality  
-**Depends on:** US-01 and US-02  
-**Implementation links:** [IMP-03](./finmind_implementation_plan.md#week-1--foundation-contracts-and-parallel-module-scaffolds), [IMP-08](./finmind_implementation_plan.md#week-1--foundation-contracts-and-parallel-module-scaffolds), [IMP-09](./finmind_implementation_plan.md#week-1--foundation-contracts-and-parallel-module-scaffolds), [IMP-16](./finmind_implementation_plan.md#week-2--core-capabilities-and-first-integrated-paths), [IMP-17](./finmind_implementation_plan.md#week-2--core-capabilities-and-first-integrated-paths), [IMP-19](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening), [IMP-20](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening), [IMP-21](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening), [IMP-24](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening), [IMP-25](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening), [IMP-26](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening), [IMP-27](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening).
-
-### Acceptance criteria
-
-1. **Given** an authenticated user, **when** they create a supported rule (`rsi_threshold`, `price_ma_cross`, `volatility_threshold`, or `score_change`), **then** parameters and ticker are validated and the rule is owned by that authenticated user.
-2. **Given** a crossing or change rule is first evaluated, **when** there is no prior state, **then** current state is stored but no alert is generated on that first evaluation.
-3. **Given** the ticker has no valid fresh snapshot within configured EGX trading-session staleness, **when** the cycle runs, **then** the ticker is skipped and logged; no alert is fabricated.
-4. **Given** a rule triggers, **when** the alert is persisted, **then** it records current/threshold values, rule identity, reason, and evidence containing `snapshot_id`, `trading_date`, `previous_trading_date`, and `config_version` where applicable.
-5. **Given** the same rule triggers repeatedly within cooldown or daily backstop, **when** monitoring evaluates it, **then** duplicate alerts are suppressed while rule state and run counts are updated appropriately.
-6. **Given** two monitoring cycles overlap, **when** the advisory lock is unavailable, **then** the overlapping cycle skips safely instead of duplicating writes.
-7. **Given** an alert or rule belongs to another user, **when** a user attempts to read/change/acknowledge it, **then** the API does not disclose it and returns the documented not-found/authorization outcome.
-8. **Given** an alert is explained, **when** the Explanation Agent processes it, **then** monitoring itself has not called the Recommendation Engine or LLM; explanations state the technical trigger and do not claim it is a recommendation.
-9. **Given** the MVP is running, **when** an alert is created, **then** it is persisted and retrievable; external email/push/SMS delivery is not implied.
-
-**Collaborates with:** US-02 is the sole technical snapshot source. US-06 consumes stored alerts and evidence. Monitoring owns its tables and never writes technical tables or calls recommendation logic.
-
----
-
-## US-06 — Understand a stored recommendation or alert
-
-**As an** investor, **I want** an explanation tied to a recommendation or alert already stored for me, **so that** I can understand the decision, its evidence, limitations, and what might change it.
-
-**Priority:** Must for recommendation and alert explanations; Should for follow-up  
-**Primary owner:** M4 — Recommendation & Explanation  
-**Depends on:** US-02, US-04; US-05 for alert mode  
-**Implementation links:** [IMP-19](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening), [IMP-20](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening), [IMP-21](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening), [IMP-22](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening), [IMP-23](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening), [IMP-25](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening), [IMP-26](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening), [IMP-27](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening).
-
-### Acceptance criteria
-
-1. **Given** a user requests an explanation by recommendation/alert ID, **when** the endpoint loads the record, **then** the server fetches the stored record and checks ownership instead of trusting user-supplied financial payloads.
-2. **Given** a recommendation output, **when** it is explained, **then** the response accounts for decision, blockers, confidence, family scores and minima, indicators, profile fit, rules, `what_would_change_it`, data quality, `config_version`, and `profile_version` as applicable.
-3. **Given** an alert and its evidence, **when** it is explained, **then** the explanation identifies the configured trigger, observed and threshold values, and relevant old/new snapshot dates; it does not invent a news/market cause.
-4. **Given** no News Agent is enabled, **when** explanation is generated, **then** it states that no news/disclosure evidence was available rather than inventing or implying evidence.
-5. **Given** LLM output contains unsupported numbers/claims or fails schema validation, **when** validators run, **then** output is retried at most once and then replaced by a template grounded in the supplied structured data.
-6. **Given** any user-facing explanation is returned, **when** rendered, **then** uncertainty/limitations and the standard no-guarantee disclaimer are present and the original deterministic decision is unchanged.
-
-**Collaborates with:** US-04 is the recommendation evidence source; US-05 is the alert/evidence source; US-02 supplies snapshots for the alert explanation. Explanations interpret decisions; they do not recalculate indicators or revise decisions.
-
----
-
-## US-07 — Ask technical stock questions without receiving an unintended recommendation
-
-**As a** user, **I want** to ask what a ticker’s technical readings mean or compare stocks, **so that** I can understand the system’s data without confusing descriptive analysis with a personalized recommendation.
-
-**Priority:** Should (core safety behavior is Must)  
-**Primary owner:** M4 — Recommendation & Explanation, with M1 orchestration  
-**Depends on:** US-01 and US-02; US-04 is needed only when the question asks whether to buy/sell  
-**Implementation links:** [IMP-03](./finmind_implementation_plan.md#week-1--foundation-contracts-and-parallel-module-scaffolds), [IMP-11](./finmind_implementation_plan.md#week-2--core-capabilities-and-first-integrated-paths), [IMP-21](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening), [IMP-22](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening), [IMP-23](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening), [IMP-25](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening), [IMP-26](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening), [IMP-27](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening).
-
-### Acceptance criteria
-
-1. **Given** a question about a stock indicator or trend, **when** it is routed to Stock Q&A, **then** the agent uses only allowlisted, read-only tools backed by stored snapshots/history/glossary and has no access to profiles, holdings, or write operations.
-2. **Given** a number is included in the answer, **when** the response is validated, **then** the number appears in tool output and the answer includes the snapshot/data date.
-3. **Given** a user asks “should I buy/sell?” or equivalent, **when** the intent is classified, **then** the question is routed to the profile-aware recommendation path and not answered as a Q&A decision.
-4. **Given** a user asks a mixed question (e.g. trend plus whether to buy), **when** orchestration can identify both parts, **then** it separates descriptive Q&A from the recommendation request and presents both with their proper boundaries.
-5. **Given** ticker identity is ambiguous or data is stale/missing/invalid, **when** the question is handled, **then** the system asks for clarification or states the data status/age in trading sessions instead of guessing or presenting it as current.
-6. **Given** a Q&A answer is returned, **when** its language is validated, **then** it contains no BUY/WATCH/AVOID recommendation language (including Arabic equivalents), follows the required Arabic output style, and includes the standard disclaimer.
-7. **Given** the user asks a concept question, **when** the glossary tool is used, **then** definitions and system-specific thresholds come from the fixed glossary rather than model memory.
-
-**Collaborates with:** US-02 owns the snapshot and history. US-04 handles suitability/recommendation decisions. US-08 supplies validation, privacy, input guard, and least-privilege expectations.
-
----
-
-## US-08 — Preserve privacy, ownership, reproducibility, and safe financial boundaries
-
-**As a** user and project stakeholder, **I want** each service to enforce access boundaries and retain traceable versions/evidence, **so that** personal data stays private and system outputs can be audited and reproduced.
-
-**Priority:** Must  
-**Primary owner:** M1 (platform/security integration), with all module owners  
-**Depends on:** US-01; acceptance is cross-cutting across US-02–US-07  
-**Implementation links:** [IMP-02](./finmind_implementation_plan.md#week-1--foundation-contracts-and-parallel-module-scaffolds), [IMP-03](./finmind_implementation_plan.md#week-1--foundation-contracts-and-parallel-module-scaffolds), [IMP-04](./finmind_implementation_plan.md#week-1--foundation-contracts-and-parallel-module-scaffolds), [IMP-06](./finmind_implementation_plan.md#week-1--foundation-contracts-and-parallel-module-scaffolds), [IMP-07](./finmind_implementation_plan.md#week-1--foundation-contracts-and-parallel-module-scaffolds), [IMP-08](./finmind_implementation_plan.md#week-1--foundation-contracts-and-parallel-module-scaffolds), [IMP-11](./finmind_implementation_plan.md#week-2--core-capabilities-and-first-integrated-paths), [IMP-13](./finmind_implementation_plan.md#week-2--core-capabilities-and-first-integrated-paths), [IMP-14](./finmind_implementation_plan.md#week-2--core-capabilities-and-first-integrated-paths), [IMP-15](./finmind_implementation_plan.md#week-2--core-capabilities-and-first-integrated-paths), [IMP-19](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening), [IMP-20](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening), [IMP-22](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening), [IMP-23](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening), [IMP-25](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening), [IMP-26](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening), [IMP-27](./finmind_implementation_plan.md#week-3--monitoring-apis-explanations-orchestration-hardening).
-
-### Acceptance criteria
-
-1. **Given** a user-scoped request, **when** identity is established, **then** `user_id` comes from the authenticated principal, not request input; tests verify ownership isolation for profiles, recommendations, rules, alerts, and explanations.
-2. **Given** an output depends on calculations or model-generated explanation, **when** it is stored or returned, **then** required configuration/profile/prompt/model versions and source record IDs are retained for reproducibility as specified.
-3. **Given** the Technical Engine runs for multiple users, **when** it calculates a ticker/day, **then** it calculates user-independent snapshots once per trading date/config version; user-specific suitability remains in Recommendation Engine.
-4. **Given** profile financial capacity data is supplied, **when** it is stored or logged, **then** sensitive salary/net-worth details are represented as bands and raw values are not sent to external tracing or logged.
-5. **Given** natural-language or untrusted text is supplied, **when** guarded routes process it, **then** body size, prompt-injection handling, schema validation, timeouts, rate limits, and safe error responses apply; untrusted text cannot call tools or alter module policy.
-6. **Given** any generated output is financial in nature, **when** returned, **then** it makes no profit guarantee, does not execute or claim to execute trades, and includes the system disclaimer.
-7. **Given** missing data, uncertain ticker links, stale snapshots, or unavailable services occur, **when** a result is generated, **then** the system exposes an explicit missing/unknown/partial state rather than substituting fabricated or neutral facts.
-8. **Given** News Agent is deferred, **when** the MVP handles a news-related query or explanation, **then** it reports news unavailability/empty evidence and does not create a false neutral signal.
-
-**Collaborates with:** This is a quality and policy story spanning all modules. M1 coordinates test coverage; each owner is accountable for their module’s data ownership, validation, safe failures, and audit/version fields.
-
----
-
-## Dependency and collaboration detail
-
-| Story | Upstream dependency | Data/contract consumed | Data/contract produced | Downstream stories |
-|---|---|---|---|---|
-| US-01 | — | Environment/config | Running API, DB, migrations, shared conventions | US-02–US-08 |
-| US-02 | US-01 | OHLCV, calendar, stock universe | `TechnicalSnapshot`, `SnapshotReader` | US-04, US-05, US-06, US-07 |
-| US-03 | US-01 | Authenticated user, interview answers | Confirmed/versioned `InvestorProfile`, `ProfileReader`, audit trail | US-04 |
-| US-04 | US-02 + US-03 | Snapshot + active profile + config | Logged `RecommendationOutput` and reproducibility metadata | US-06; US-07 recommendation routing |
-| US-05 | US-01 + US-02 | Rules + valid snapshots + prior rule state | Alert with structured evidence + run/state | US-06 |
-| US-06 | US-04; US-05 for alert mode; US-02 for snapshot context | Stored recommendation/alert and evidence | Validated explanation with limitations/disclaimer | User-facing outcome |
-| US-07 | US-01 + US-02; US-04 for buy/sell intent | Read-only snapshot/history/glossary; recommendation route when required | Descriptive answer or safely routed recommendation request | User-facing outcome |
-| US-08 | US-01 | Identity, module contracts, logs and persisted data | Cross-cutting security, traceability, safe behavior | All stories |
-
-## MVP story sequencing recommendation
-
-1. Complete the minimal foundation in **US-01**.
-2. Build **US-02** snapshots and **US-03** confirmed profiles in parallel using shared contracts.
-3. Integrate them in **US-04** and create monitoring evaluators for **US-05** in parallel; monitoring’s end-to-end cycle waits for snapshots.
-4. Deliver explanation modes in **US-06** and safe Q&A/routing in **US-07** after their source records/tools exist.
-5. Verify **US-08** continuously, with full cross-module security and contract checks in Week 3.
-
-**Scope reminder:** News sentiment, articles, Chroma, recommendations using news, portfolio construction, position sizing, holdings decisions, and external alert delivery are deferred from this MVP.
+# FinMind — User Stories
+
+> **Source of truth:** `FinMind_unified_fastapi_spec.md`.
+> **Connected document:** [FinMind Implementation Plan](./FinMind_Implementation_Plan.md).
+> **Traceability convention:** Every story references one or more `REQ-*` requirements and one or more `PLAN-*` tasks. Technical requirements without a valid actor are retained in the coverage matrix and remain in the Implementation Plan; they are not turned into invented user stories.
+
+## 1. Project Scope Summary
+
+These stories describe only user-facing or actor-facing behavior explicitly present in the source specification. The source does not define names or job titles for actors beyond concepts such as user/investor, authenticated user, Dashboard, Orchestration Layer, Scheduler, Monitoring administrator, and downstream services. Where a specific human actor is not explicit, the story states `NEEDS CLARIFICATION` rather than guessing.
+
+The stories connect to the implementation plan through stable IDs. For example:
+
+`REQ-006 → PLAN-004 → US-001`
+
+## 2. User Stories
+
+### US-001 — Conduct the Arabic investor interview
+
+- **Requirement ID:** REQ-006
+- **Related Implementation Plan ID(s):** PLAN-004
+- **User/Actor:** Investor/user
+- **Title:** Complete a guided Arabic investor interview
+- **User Story:** As an investor/user, I want to answer a guided Arabic profiling interview so that the system can collect my investment profile.
+- **Acceptance Criteria:**
+  1. A stateful interview workflow presents the next required question.
+  2. User responses are processed as structured profile information.
+  3. The workflow preserves session state and can continue from a checkpoint.
+  4. The agent does not calculate indicators or issue a recommendation.
+- **Priority:** P0
+- **Dependencies:** PLAN-001–PLAN-004; exact LLM/LangGraph deployment is **NEEDS CLARIFICATION**.
+- **Planned Week:** Week 1–2
+- **Assigned Team Member:** Team Member 2 (planning decision)
+- **Definition of Done:** Interview path, state tests, and API contract tests pass.
+
+### US-002 — Review and confirm an investor profile
+
+- **Requirement ID:** REQ-007–REQ-009
+- **Related Implementation Plan ID(s):** PLAN-004, PLAN-005
+- **User/Actor:** Investor/user
+- **Title:** Review and explicitly confirm the profile
+- **User Story:** As an investor/user, I want to review and edit the extracted profile before confirmation so that only an approved profile becomes active.
+- **Acceptance Criteria:**
+  1. The profile includes the specified risk, horizon, goal, experience, preferences, exclusions, and constraints.
+  2. Contradictory or incomplete information causes clarification rather than silent acceptance.
+  3. An Arabic summary is presented for review.
+  4. The profile remains inactive until explicit confirmation.
+  5. Edits are validated before confirmation.
+- **Priority:** P0
+- **Dependencies:** US-001; profile persistence and user identity contract.
+- **Planned Week:** Week 2
+- **Assigned Team Member:** Team Member 2 (planning decision)
+- **Definition of Done:** Confirm/edit flow persists only a valid confirmed profile and has API/integration tests.
+
+### US-003 — Maintain profile history and preferences
+
+- **Requirement ID:** REQ-010
+- **Related Implementation Plan ID(s):** PLAN-005, PLAN-006
+- **User/Actor:** Investor/user; system preference-memory component
+- **Title:** Keep an auditable profile and preference history
+- **User Story:** As an investor/user, I want confirmed profile changes and learned preferences to be versioned so that my profile history remains auditable.
+- **Acceptance Criteria:**
+  1. Confirmed changes create an audit record.
+  2. Learned preferences include source, confidence, validation status, and timestamps as specified.
+  3. Foundational risk values cannot be silently changed by memory extraction.
+  4. Sensitive raw financial disclosures are not sent to external tracing logs.
+- **Priority:** P1
+- **Dependencies:** US-002; LangMem storage details are **NEEDS CLARIFICATION**.
+- **Planned Week:** Week 2–3
+- **Assigned Team Member:** Team Member 2 (planning decision)
+- **Definition of Done:** Audit and memory repository tests pass and unconfirmed changes cannot become active.
+
+### US-004 — View technical stock information
+
+- **Requirement ID:** REQ-012–REQ-017
+- **Related Implementation Plan ID(s):** PLAN-007, PLAN-008
+- **User/Actor:** `NEEDS CLARIFICATION — actor not specified in source for direct technical snapshot access`
+- **Title:** Access a reproducible technical snapshot
+- **User Story:** As a `NEEDS CLARIFICATION` actor, I want to access a technical snapshot so that I can view the stored indicators, family scores, regime, risk metrics, prices, and data status.
+- **Acceptance Criteria:**
+  1. A snapshot is generated from the consistent OHLCV series.
+  2. Data-quality failures are explicit and do not produce a valid recommendation.
+  3. Indicators and family scores follow the source formulas and 0–100 bounds.
+  4. The snapshot includes trading/as-of date, configuration version, and provenance.
+- **Priority:** P0
+- **Dependencies:** PLAN-007–PLAN-008; direct actor/API exposure is **NEEDS CLARIFICATION**.
+- **Planned Week:** Week 2–3
+- **Assigned Team Member:** Team Member 3 (planning decision)
+- **Definition of Done:** Formula, persistence, and read API/contract tests pass.
+
+### US-005 — Receive a rule-based recommendation
+
+- **Requirement ID:** REQ-018–REQ-021
+- **Related Implementation Plan ID(s):** PLAN-005, PLAN-008, PLAN-009
+- **User/Actor:** Investor/user
+- **Title:** Receive a profile-aware recommendation result
+- **User Story:** As an investor/user, I want the system to evaluate a stock against my confirmed profile and technical data so that I receive the documented recommendation result and reasons.
+- **Acceptance Criteria:**
+  1. Only a confirmed active profile is used.
+  2. Data-quality, liquidity, exclusion, profile, and technical gates are applied.
+  3. Setup score is not used as the sole decision.
+  4. The response includes direction, confidence, blockers/reasons, family results, user fit, and data quality.
+  5. Stale/invalid data produces no recommendation and explains why.
+  6. The result is logged with the required audit fields.
+- **Priority:** P0
+- **Dependencies:** US-002, US-004; missing-news handling and news scoring policy are **NEEDS CLARIFICATION**.
+- **Planned Week:** Week 3
+- **Assigned Team Member:** Team Member 3 (planning decision)
+- **Definition of Done:** Recommendation contract, decision-rule tests, audit-log tests, and API tests pass.
+
+### US-006 — Search and retrieve permitted financial news
+
+- **Requirement ID:** REQ-022–REQ-024, REQ-026–REQ-027, REQ-042
+- **Related Implementation Plan ID(s):** PLAN-010, PLAN-011, PLAN-012
+- **User/Actor:** `NEEDS CLARIFICATION — actor not specified in source for direct News Agent API access`
+- **Title:** Search company and market news
+- **User Story:** As a `NEEDS CLARIFICATION` actor, I want to search and retrieve permitted company/disclosure news so that I can access traceable information connected to EGX tickers.
+- **Acceptance Criteria:**
+  1. Requests use the typed News Agent FastAPI contracts.
+  2. Results preserve source IDs, URLs, publication dates, article IDs, and ticker links.
+  3. Ambiguous ticker matches are marked or omitted rather than guessed.
+  4. Missing, stale, partial, and unavailable statuses are distinct.
+  5. News Agent remains active and is not replaced by a placeholder.
+- **Priority:** P0
+- **Dependencies:** Approved sources and content permissions are **NEEDS CLARIFICATION**.
+- **Planned Week:** Week 2–3
+- **Assigned Team Member:** Team Member 4 (planning decision)
+- **Definition of Done:** At least one source works end to end with idempotent persistence, retrieval, and API tests.
+
+### US-007 — Understand the positive or negative direction of news
+
+- **Requirement ID:** REQ-025, REQ-028
+- **Related Implementation Plan ID(s):** PLAN-011
+- **User/Actor:** `NEEDS CLARIFICATION — actor not specified in source for consuming news direction`
+- **Title:** Receive evidence-backed news direction
+- **User Story:** As a `NEEDS CLARIFICATION` consumer, I want news direction to be positive, negative, neutral, or unknown with evidence so that downstream modules can use the news information without the News Agent making a final recommendation.
+- **Acceptance Criteria:**
+  1. Direction is one of `positive`, `negative`, `neutral`, or `unknown`.
+  2. Each material direction has evidence and source metadata.
+  3. Confidence, relevance, novelty, freshness, and source reliability remain distinguishable.
+  4. No impact level/impact score is emitted.
+  5. The News Agent never returns a final buy/sell decision.
+- **Priority:** P0
+- **Dependencies:** US-006; final taxonomy and aggregation policy are **NEEDS CLARIFICATION**.
+- **Planned Week:** Week 3
+- **Assigned Team Member:** Team Member 4 (planning decision)
+- **Definition of Done:** Direction schema, evidence validation, downstream contract, and negative/unknown cases are tested.
+
+### US-008 — Receive an Arabic explanation of a recommendation
+
+- **Requirement ID:** REQ-029–REQ-030, REQ-034
+- **Related Implementation Plan ID(s):** PLAN-009, PLAN-011, PLAN-013
+- **User/Actor:** Investor/user
+- **Title:** Understand why a recommendation was produced
+- **User Story:** As an investor/user, I want an Arabic explanation of the prepared recommendation so that I can understand its factors, risks, evidence, and limitations.
+- **Acceptance Criteria:**
+  1. The explanation preserves the Recommendation Engine decision.
+  2. Numeric and financial claims come from supplied data or authorized evidence.
+  3. Sources are attributable and not invented.
+  4. Uncertainty and limitations are explicit.
+  5. Arabic style and the financial disclaimer are included.
+  6. The explanation does not guarantee outcomes.
+- **Priority:** P0
+- **Dependencies:** US-005; evidence/RAG availability is **NEEDS CLARIFICATION**.
+- **Planned Week:** Week 2–3
+- **Assigned Team Member:** Team Member 5 (planning decision)
+- **Definition of Done:** Recommendation input produces validated structured Arabic output and evidence checks pass.
+
+### US-009 — Receive an Arabic explanation of a monitoring alert
+
+- **Requirement ID:** REQ-029–REQ-030, REQ-034, REQ-037
+- **Related Implementation Plan ID(s):** PLAN-013, PLAN-015
+- **User/Actor:** Investor/user
+- **Title:** Understand why an alert triggered
+- **User Story:** As an investor/user, I want an Arabic explanation of a structured monitoring alert so that I can understand the triggering rule, observed values, evidence, and limitations.
+- **Acceptance Criteria:**
+  1. Alert input is validated before generation.
+  2. Triggered rule, observed value, threshold, timestamp, and related snapshot are preserved when available.
+  3. The Explanation Agent does not modify the alert or create a recommendation.
+  4. Missing evidence is clearly stated.
+- **Priority:** P0
+- **Dependencies:** PLAN-015; actual alert-to-explanation schema must be approved.
+- **Planned Week:** Week 3
+- **Assigned Team Member:** Team Member 5 (planning decision)
+- **Definition of Done:** Alert explanation schema and tests match the actual Monitoring Service output.
+
+### US-010 — Ask a follow-up question
+
+- **Requirement ID:** REQ-031, REQ-034
+- **Related Implementation Plan ID(s):** PLAN-013
+- **User/Actor:** Investor/user
+- **Title:** Ask follow-up questions about an existing result
+- **User Story:** As an investor/user, I want to ask a follow-up question about an existing recommendation or alert so that I can understand the supplied result without it being silently changed.
+- **Acceptance Criteria:**
+  1. The question is associated with the relevant stock, result, or alert.
+  2. Existing context is reused where available.
+  3. New evidence is distinguished from previously supplied evidence.
+  4. The original decision remains unchanged.
+  5. Arabic style and disclaimer remain present.
+- **Priority:** P1
+- **Dependencies:** US-008 or US-009; conversation-state implementation details are **NEEDS CLARIFICATION**.
+- **Planned Week:** Week 3
+- **Assigned Team Member:** Team Member 5 (planning decision)
+- **Definition of Done:** Follow-up context and validation tests pass.
+
+### US-011 — Ask a Stock Q&A question
+
+- **Requirement ID:** REQ-031–REQ-034
+- **Related Implementation Plan ID(s):** PLAN-008, PLAN-013, PLAN-014
+- **User/Actor:** Investor/user
+- **Title:** Ask descriptive questions about a stock
+- **User Story:** As an investor/user, I want to ask a descriptive question about one or more stocks so that I can understand stored technical data without receiving an unrequested recommendation.
+- **Acceptance Criteria:**
+  1. The mode is selected as `stock_qa` by the orchestrator.
+  2. Only the specified read-only snapshot tools are callable.
+  3. The answer uses only tool output and includes `data_date`/freshness.
+  4. Every numeric claim is traceable to a tool result.
+  5. Missing or stale data is stated explicitly.
+  6. Recommendation language is rejected, retried once, and replaced by a safe fallback if necessary.
+  7. Mixed questions are split so the descriptive part uses Stock Q&A and the recommendation part uses Recommendation Engine.
+- **Priority:** P0
+- **Dependencies:** US-004; exact Arabic recommendation-language lexicon is **NEEDS CLARIFICATION**.
+- **Planned Week:** Week 3
+- **Assigned Team Member:** Team Member 5 (planning decision)
+- **Definition of Done:** All five read-only tools, mode routing, grounding validation, stale-data behavior, and fallback tests pass.
+
+### US-012 — Create and manage a monitoring rule
+
+- **Requirement ID:** REQ-035, REQ-039
+- **Related Implementation Plan ID(s):** PLAN-015, PLAN-016
+- **User/Actor:** Authenticated user
+- **Title:** Manage monitoring rules
+- **User Story:** As an authenticated user, I want to create, view, update, activate/deactivate, and delete my monitoring rules so that the service can evaluate conditions I configure.
+- **Acceptance Criteria:**
+  1. Rule parameters validate against the supported discriminated rule types.
+  2. A user can view only owned rules.
+  3. Updates are limited to the fields specified by the source.
+  4. Rules are evaluated deterministically and never through an LLM.
+  5. Protected routes enforce authentication and ownership.
+- **Priority:** P0
+- **Dependencies:** PLAN-003, PLAN-015; exact admin role is **NEEDS CLARIFICATION**.
+- **Planned Week:** Week 3
+- **Assigned Team Member:** Team Member 1 (planning decision)
+- **Definition of Done:** Rule API, validation, ownership, and evaluator tests pass.
+
+### US-013 — Receive and acknowledge a monitoring alert
+
+- **Requirement ID:** REQ-036–REQ-039
+- **Related Implementation Plan ID(s):** PLAN-015, PLAN-016
+- **User/Actor:** Authenticated user
+- **Title:** Review and acknowledge alerts
+- **User Story:** As an authenticated user, I want to view and acknowledge my alerts so that I can track the monitoring events generated for my rules.
+- **Acceptance Criteria:**
+  1. Only fresh market/technical data is evaluated.
+  2. Stale tickers are skipped without a user alert.
+  3. Alerts contain the triggering evidence and related run/rule information.
+  4. Cooldown and database constraints prevent duplicate active alerts.
+  5. A user can view and acknowledge only owned alerts.
+- **Priority:** P0
+- **Dependencies:** US-012; technical table names and columns are **NEEDS CLARIFICATION**.
+- **Planned Week:** Week 3
+- **Assigned Team Member:** Team Member 1 (planning decision)
+- **Definition of Done:** Monitoring cycle, deduplication, alert API, ownership, and acknowledgement tests pass.
+
+## 3. User Story Acceptance Criteria
+
+The detailed acceptance criteria are recorded under each story. The following cross-story checks apply without creating new requirements:
+
+| Check | Applicable stories | Pass condition |
+|---|---|---|
+| Source traceability | US-001–US-013 | Each story has at least one REQ and PLAN ID. |
+| API validation | US-002, US-005–US-007, US-012–US-013 | Requests/responses use typed schemas and protected dependencies. |
+| Data freshness | US-004, US-005, US-011, US-013 | Stale/missing data remains explicit and follows the source behavior. |
+| Evidence grounding | US-006–US-011 | Evidence/source IDs are traceable and never fabricated. |
+| Ownership/safety | US-002, US-005, US-012–US-013 | Users cannot access another user’s protected profile/rules/alerts. |
+| Scope preservation | All stories | No story changes, merges, or removes a source requirement. |
+
+## 4. Requirement → Plan → User Story Traceability Matrix
+
+| Requirement ID | README Requirement | Implementation Plan ID | User Story ID | Week | Team Member |
+|---|---|---|---|---|---|
+| REQ-001 | FastAPI HTTP boundary | PLAN-001 | — | W1 | TM1 |
+| REQ-002 | Runtime/dependency baseline | PLAN-001–002 | — | W1 | TM1 |
+| REQ-003 | App factory/lifecycle/health | PLAN-001–002 | — | W1 | TM1 |
+| REQ-004 | API/security rules | PLAN-003 | US-002, US-005, US-012, US-013 | W1–3 | TM5/TM3/TM1 |
+| REQ-005 | Canonical storage/provenance | PLAN-002, PLAN-017 | — | W1/W3 | TM1/all |
+| REQ-006 | Arabic interview | PLAN-004 | US-001 | W1–2 | TM2 |
+| REQ-007 | Profile extraction | PLAN-004–005 | US-002 | W1–2 | TM2 |
+| REQ-008 | Validation/contradictions | PLAN-004 | US-001, US-002 | W1–2 | TM2 |
+| REQ-009 | Summary/HITL confirmation | PLAN-005 | US-002 | W2 | TM2 |
+| REQ-010 | Persistence/audit/memory | PLAN-005–006 | US-003 | W2–3 | TM2 |
+| REQ-011 | Investor boundary | PLAN-004–006 | US-001, US-002 | W1–3 | TM2 |
+| REQ-012 | OHLCV ingestion | PLAN-007 | US-004 | W1–2 | TM3 |
+| REQ-013 | Data quality | PLAN-007 | US-004, US-005 | W1–2 | TM3 |
+| REQ-014 | Indicators | PLAN-008 | US-004 | W2–3 | TM3 |
+| REQ-015 | Scoring | PLAN-008 | US-004 | W2–3 | TM3 |
+| REQ-016 | Regime/risk | PLAN-008 | US-004 | W2–3 | TM3 |
+| REQ-017 | Snapshots | PLAN-008 | US-004, US-011 | W2–3 | TM3/TM5 |
+| REQ-018 | Recommendation filters | PLAN-009 | US-005 | W3 | TM3 |
+| REQ-019 | Recommendation gates | PLAN-009 | US-005 | W3 | TM3 |
+| REQ-020 | Recommendation payload | PLAN-009 | US-005, US-008 | W3 | TM3/TM5 |
+| REQ-021 | Recommendation log | PLAN-009 | US-005 | W3 | TM3 |
+| REQ-022 | News ingestion | PLAN-010 | US-006 | W1–2 | TM4 |
+| REQ-023 | News normalization/dedupe | PLAN-010 | US-006 | W2 | TM4 |
+| REQ-024 | Company/ticker linking | PLAN-010 | US-006 | W2 | TM4 |
+| REQ-025 | Direction/evidence only | PLAN-011 | US-007 | W3 | TM4 |
+| REQ-026 | News persistence/retrieval | PLAN-011 | US-006, US-007 | W2–3 | TM4 |
+| REQ-027 | News API | PLAN-012 | US-006 | W3 | TM4 |
+| REQ-028 | News downstream integration | PLAN-011, PLAN-017 | US-007, US-008 | W3 | TM4/all |
+| REQ-029 | Explanation inputs | PLAN-013 | US-008, US-009 | W2–3 | TM5 |
+| REQ-030 | Evidence grounding | PLAN-013 | US-008–US-011 | W2–3 | TM5 |
+| REQ-031 | Four explanation modes | PLAN-013–014 | US-008–US-011 | W2–3 | TM5 |
+| REQ-032 | Read-only Q&A tools | PLAN-014 | US-011 | W3 | TM5 |
+| REQ-033 | Q&A validation/safety | PLAN-014 | US-011 | W3 | TM5 |
+| REQ-034 | Arabic/disclaimer | PLAN-013–014 | US-008–US-011 | W2–3 | TM5 |
+| REQ-035 | Deterministic monitoring rules | PLAN-015 | US-012 | W2–3 | TM1 |
+| REQ-036 | Freshness/read-only data | PLAN-015 | US-013 | W3 | TM1 |
+| REQ-037 | Monitoring persistence/dedup | PLAN-015 | US-013 | W3 | TM1 |
+| REQ-038 | Scheduler/advisory lock | PLAN-015 | — | W2–3 | TM1 |
+| REQ-039 | Monitoring API | PLAN-016 | US-012, US-013 | W3 | TM1 |
+| REQ-040 | Cross-module integration | PLAN-017 | US-002, US-005, US-007–US-011, US-013 | W3 | All |
+| REQ-041 | Testing/acceptance | PLAN-018–019 | All applicable stories | W1–3 | All |
+| REQ-042 | Active News Agent | PLAN-010–012 | US-006, US-007 | W1–3 | TM4 |
+
+`—` means the requirement is technical/infrastructure-only and intentionally has no invented user story.
+
+## 5. Coverage Check
+
+| README Requirement | Included in Implementation Plan? | Included in User Stories? | Status |
+|---|---|---|---|
+| REQ-001 FastAPI boundary | Yes: PLAN-001 | No — infrastructure | Covered |
+| REQ-002 Runtime baseline | Yes: PLAN-001–002 | No — infrastructure | Covered |
+| REQ-003 Application lifecycle | Yes: PLAN-001–002 | No — infrastructure | Covered |
+| REQ-004 API/security | Yes: PLAN-003 | Yes: US-002, US-005, US-012, US-013 | Covered |
+| REQ-005 Data contracts | Yes: PLAN-002, PLAN-017 | No — infrastructure | Covered |
+| REQ-006–REQ-011 Investor Agent | Yes: PLAN-004–006 | Yes: US-001–US-003 | Covered |
+| REQ-012–REQ-017 Technical Engine | Yes: PLAN-007–008 | Yes: US-004 | Covered |
+| REQ-018–REQ-021 Recommendation Engine | Yes: PLAN-009 | Yes: US-005 | Covered |
+| REQ-022–REQ-028 News Agent | Yes: PLAN-010–012, PLAN-017 | Yes: US-006–US-007 | Covered |
+| REQ-029–REQ-034 Explanation Agent | Yes: PLAN-013–014 | Yes: US-008–US-011 | Covered |
+| REQ-035–REQ-039 Monitoring Service | Yes: PLAN-015–016 | Yes: US-012–US-013 | Covered |
+| REQ-040 Cross-module integration | Yes: PLAN-017 | Yes where user-facing | Covered |
+| REQ-041 Testing/acceptance | Yes: PLAN-018–019 | Yes through story acceptance checks | Covered |
+| REQ-042 Active News Agent | Yes: PLAN-010–012 | Yes: US-006–US-007 | Covered |
+
+No source requirement is intentionally removed, postponed, merged, renamed, or changed to fit the schedule.
+
+## 6. Dependencies
+
+- US-001 and US-002 depend on the shared FastAPI, database, and authentication foundations.
+- US-005 depends on a confirmed profile and a valid technical snapshot.
+- US-006 and US-007 depend on approved sources and content permissions.
+- US-008–US-011 depend on stable Recommendation, Monitoring, News, and snapshot contracts.
+- US-011 depends on technical snapshot storage and the five read-only tool contracts.
+- US-012–US-013 depend on authenticated ownership and confirmed technical table contracts.
+- All stories depend on the final cross-module schema review in PLAN-017 before release.
+
+## 7. Risks and Blockers
+
+| ID | Risk/blocker | Stories affected | Required action |
+|---|---|---|---|
+| BLOCKER-001 | Authentication and actor roles are not fully specified. | US-002, US-005, US-006, US-012, US-013 | Confirm identity provider, JWT claims, and ownership rules. |
+| BLOCKER-002 | Direct actor for technical/news APIs is not specified. | US-004, US-006, US-007 | Confirm whether these are user APIs, internal tools, or both. |
+| BLOCKER-003 | News sources and permissions are not specified. | US-006, US-007, US-008 | Confirm approved sources and storage rights. |
+| BLOCKER-004 | Actual technical/market table contracts are open. | US-004, US-005, US-011, US-013 | Confirm table names and columns. |
+| BLOCKER-005 | LLM/RAG/embedding choices are open. | US-001, US-003, US-008–US-011 | Confirm providers and deployment boundaries. |
+| BLOCKER-006 | Three-week capacity may not support full production readiness. | All | Keep all scope; mark incomplete work and limitations explicitly. |
+
+## 8. Assumptions and Clarifications
+
+### A. Explicitly stated in the source specification
+
+- The source specification is the sole project source for these stories.
+- The project has five modules in the specified order.
+- FastAPI and the listed async PostgreSQL stack are part of the implementation.
+- The News Agent is active and direction-only.
+- The Explanation Agent has recommendation, alert, follow-up, and Stock Q&A modes.
+- Monitoring rules and technical calculations are deterministic.
+- Protected APIs use authentication and ownership checks where specified.
+
+### B. Planning decisions
+
+- Team Member 1–5 labels are used exactly as provided.
+- Team assignments and planned weeks follow the Implementation Plan and do not imply actual skills.
+- User stories are limited to explicit actor-facing functionality; technical requirements remain in the plan and matrix.
+- A dash in the traceability matrix means no actor was specified or the requirement is infrastructure-only.
+
+### C. NEEDS CLARIFICATION
+
+- Exact names and roles of team members.
+- Exact human actors for technical snapshot and News Agent direct access.
+- Authentication provider, roles, and deployment environment.
+- Dashboard/UI scope.
+- News providers, permissions, taxonomy, and aggregation policy.
+- Actual database table contracts.
+- LLM, LangMem, RAG, embedding, ChromaDB, and evaluation dataset choices.
+- Exact Arabic lexicon for blocked recommendation language in Stock Q&A.
+
+## 9. Recommended Changes — NOT PART OF THE BASE PLAN
+
+These are optional recommendations only and are not requirements:
+
+1. Confirm actors and authentication before finalizing public route permissions.
+2. Approve cross-module schemas before parallel implementation reaches integration.
+3. Add a post-week-3 hardening milestone for production data, Arabic evaluation, and RAG quality.
+4. Provide a reviewed test dataset and representative fixtures before accepting financial outputs.
+
+The base stories and traceability matrix remain unchanged by these recommendations.
