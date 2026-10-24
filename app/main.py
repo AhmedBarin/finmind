@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.workers.scheduler import start_scheduler, stop_scheduler
+from .workers.scheduler import start_scheduler, stop_scheduler
 
 
 @asynccontextmanager

@@ -1,7 +1,6 @@
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-
-from app.news.sources.mubasher import main as scrape_mubasher
+from importlib import import_module
 
 
 scheduler = AsyncIOScheduler(timezone="Africa/Cairo")
@@ -10,6 +9,10 @@ scheduler = AsyncIOScheduler(timezone="Africa/Cairo")
 def start_scheduler() -> None:
     if scheduler.running:
         return
+
+    scrape_mubasher = getattr(
+        import_module("app.news.sources.mubasher"), "main"
+    )
 
     scheduler.add_job(
         scrape_mubasher,

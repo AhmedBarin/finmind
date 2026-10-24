@@ -9,8 +9,8 @@ from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright
 from sqlalchemy import select
 
-from app.core.database import SessionLocal
-from app.news.models import NewsArticle, NewsSource
+from ...core.database import SessionLocal
+from ..models import NewsArticle, NewsSource
 
 
 BASE_URL = "https://www.mubasher.info"
