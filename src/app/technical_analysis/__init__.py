@@ -1,0 +1,2 @@
+"""Deterministic technical analysis calculations."""
+
