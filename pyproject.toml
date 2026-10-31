@@ -7,10 +7,21 @@ authors = [
     { name = "Kareem Aboalnoor", email = "kareemaboalnoor8@gmail.com" }
 ]
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "alembic>=1.20.1",
+    "apscheduler>=3.11.3",
+    "asyncpg>=0.32.0",
+    "beautifulsoup4>=4.15.0",
+    "fastapi>=0.162.0",
+    "httpx>=0.28.1",
+    "playwright>=1.64.1",
+    "pydantic-settings>=2.16.2",
+    "sqlalchemy[asyncio]>=2.1.6",
+    "uvicorn[standard]>=0.54.0",
+]
 
-[project.scripts]
-finmind = "finmind:main"
+[tool.uv.build-backend]
+module-name = "app"
 
 [build-system]
 requires = ["uv_build>=0.12.5,<0.13.0"]
