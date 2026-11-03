@@ -1,0 +1,42 @@
+[33m5d2d6ea[m[33m ([m[1;36mHEAD[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m, [m[1;32mmain[m[33m)[m HEAD@{0}: rebase (start): checkout main
+[33m0347328[m[33m ([m[1;32mmonitoring-Database_Models-Alembic_Migration[m[33m)[m HEAD@{1}: checkout: moving from main to monitoring-Database_Models-Alembic_Migration
+[33m5d2d6ea[m[33m ([m[1;36mHEAD[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m, [m[1;32mmain[m[33m)[m HEAD@{2}: checkout: moving from monitoring-initialize-package-structure to main
+[33m4d57538[m[33m ([m[1;32mmonitoring-initialize-package-structure[m[33m)[m HEAD@{3}: commit (merge): Refactor code structure for improved readability and maintainability
+[33m35f7f54[m[33m ([m[1;31morigin/monitoring-initialize-package-structure[m[33m, [m[1;31morigin/monitoring-Database_Models-Alembic_Migration[m[33m)[m HEAD@{4}: checkout: moving from main to monitoring-initialize-package-structure
+[33m5d2d6ea[m[33m ([m[1;36mHEAD[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m, [m[1;32mmain[m[33m)[m HEAD@{5}: pull origin main: Fast-forward
+[33m832afe4[m HEAD@{6}: checkout: moving from monitoring-initialize-package-structure to main
+[33m35f7f54[m[33m ([m[1;31morigin/monitoring-initialize-package-structure[m[33m, [m[1;31morigin/monitoring-Database_Models-Alembic_Migration[m[33m)[m HEAD@{7}: checkout: moving from main to monitoring-initialize-package-structure
+[33m832afe4[m HEAD@{8}: checkout: moving from monitoring-Database_Models-Alembic_Migration to main
+[33m0347328[m[33m ([m[1;32mmonitoring-Database_Models-Alembic_Migration[m[33m)[m HEAD@{9}: commit: Implement technical analysis scoring system with momentum, trend, volume, and support/resistance families
+[33m35f7f54[m[33m ([m[1;31morigin/monitoring-initialize-package-structure[m[33m, [m[1;31morigin/monitoring-Database_Models-Alembic_Migration[m[33m)[m HEAD@{10}: checkout: moving from monitoring-initialize-package-structure to monitoring-Database_Models-Alembic_Migration
+[33m35f7f54[m[33m ([m[1;31morigin/monitoring-initialize-package-structure[m[33m, [m[1;31morigin/monitoring-Database_Models-Alembic_Migration[m[33m)[m HEAD@{11}: checkout: moving from monitoring-Database_Models-Alembic_Migration to monitoring-initialize-package-structure
+[33m35f7f54[m[33m ([m[1;31morigin/monitoring-initialize-package-structure[m[33m, [m[1;31morigin/monitoring-Database_Models-Alembic_Migration[m[33m)[m HEAD@{12}: checkout: moving from monitoring-initialize-package-structure to monitoring-Database_Models-Alembic_Migration
+[33m35f7f54[m[33m ([m[1;31morigin/monitoring-initialize-package-structure[m[33m, [m[1;31morigin/monitoring-Database_Models-Alembic_Migration[m[33m)[m HEAD@{13}: pull origin monitoring-Database_Models-Alembic_Migration: Fast-forward
+[33m36f408c[m HEAD@{14}: checkout: moving from main to monitoring-initialize-package-structure
+[33m832afe4[m HEAD@{15}: checkout: moving from monitoring-Database_Models-Alembic_Migration to main
+[33m35f7f54[m[33m ([m[1;31morigin/monitoring-initialize-package-structure[m[33m, [m[1;31morigin/monitoring-Database_Models-Alembic_Migration[m[33m)[m HEAD@{16}: checkout: moving from main to monitoring-Database_Models-Alembic_Migration
+[33m832afe4[m HEAD@{17}: checkout: moving from monitoring-initialize-package-structure to main
+[33m36f408c[m HEAD@{18}: checkout: moving from monitoring-Database_Models-Alembic_Migration to monitoring-initialize-package-structure
+[33m35f7f54[m[33m ([m[1;31morigin/monitoring-initialize-package-structure[m[33m, [m[1;31morigin/monitoring-Database_Models-Alembic_Migration[m[33m)[m HEAD@{19}: checkout: moving from main to monitoring-Database_Models-Alembic_Migration
+[33m832afe4[m HEAD@{20}: checkout: moving from monitoring-Database_Models-Alembic_Migration to main
+[33m35f7f54[m[33m ([m[1;31morigin/monitoring-initialize-package-structure[m[33m, [m[1;31morigin/monitoring-Database_Models-Alembic_Migration[m[33m)[m HEAD@{21}: commit: feat(monitoring): implement database models and alembic migration (REQ-037)
+[33m36f408c[m HEAD@{22}: checkout: moving from monitoring-initialize-package-structure to monitoring-Database_Models-Alembic_Migration
+[33m36f408c[m HEAD@{23}: checkout: moving from monitoring-Database_Models-Alembic_Migration to monitoring-initialize-package-structure
+[33m36f408c[m HEAD@{24}: checkout: moving from monitoring-initialize-package-structure to monitoring-Database_Models-Alembic_Migration
+[33m36f408c[m HEAD@{25}: checkout: moving from monitoring-initialize-package-structure to monitoring-initialize-package-structure
+[33m36f408c[m HEAD@{26}: Branch: renamed refs/heads/monitoring to refs/heads/monitoring-initialize-package-structure
+[33m36f408c[m HEAD@{28}: commit: Implement Docs directory and add files on it
+[33m7c83956[m HEAD@{29}: commit: feat(monitoring): initialize package structure, settings, and step 1 tests (PLAN-015)
+[33m832afe4[m HEAD@{30}: checkout: moving from main to monitoring
+[33m832afe4[m HEAD@{31}: pull origin main: Fast-forward
+[33ma740461[m HEAD@{32}: Branch: renamed refs/heads/new_branch to refs/heads/main
+[33ma740461[m HEAD@{34}: commit (initial): Initial Commit
+[33m9a51f2b[m HEAD@{35}: Branch: renamed refs/heads/new_branch to refs/heads/main
+[33m9a51f2b[m HEAD@{37}: commit (initial): Initial Commit
+[33m4b92006[m HEAD@{38}: reset: moving to head
+[33m4b92006[m HEAD@{39}: reset: moving to HEAD~5
+[33m9ee82fe[m HEAD@{40}: pull origin main: Fast-forward
+[33mae46153[m HEAD@{41}: checkout: moving from monitoring to main
+[33mae46153[m HEAD@{42}: Branch: renamed refs/heads/monitoring to refs/heads/monitoring
+[33mae46153[m HEAD@{44}: checkout: moving from main to monitoring
+[33mae46153[m HEAD@{45}: clone: from https://github.com/AhmedBarin/finmind.git
