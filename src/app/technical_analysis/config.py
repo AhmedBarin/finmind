@@ -22,6 +22,11 @@ TREND_COMPONENT_WEIGHTS = {
     "sma50_vs_sma200": 0.40,
 }
 MOMENTUM_COMPONENT_WEIGHTS = {"rsi14": 0.50, "macd_histogram": 0.50}
+SETUP_SCORE_WEIGHTS: dict[str, dict[str, float]] = {
+    "trending": {"trend": 0.45, "momentum": 0.25, "volume": 0.15, "support_resistance": 0.15},
+    "transition": {"trend": 0.35, "momentum": 0.25, "volume": 0.20, "support_resistance": 0.20},
+    "ranging": {"trend": 0.15, "momentum": 0.35, "volume": 0.15, "support_resistance": 0.35},
+}
 
 # Optional scoring refinements and the agreed Volume reliability rule.
 OBV_BLENDING_ENABLED = False
