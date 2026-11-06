@@ -100,9 +100,14 @@ async def run_monitoring_cycle(
                     rules_evaluated += 1
                     try:
                         # Parse stored JSON params into typed schema
-                        rule_params = _rule_params_adapter.validate_python(
-                            rule.parameters
+                        params_dict = (
+                            dict(rule.parameters)
+                            if isinstance(rule.parameters, dict)
+                            else {}
                         )
+                        if "rule_type" not in params_dict:
+                            params_dict["rule_type"] = rule.rule_type
+                        rule_params = _rule_params_adapter.validate_python(params_dict)
 
                         # Fetch previous state for stateful evaluators
                         prev_state = await state_repository.get_state(session, rule.id)
