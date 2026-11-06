@@ -64,6 +64,7 @@ async def create_rule(
     )
     session.add(rule)
     await session.flush()
+    await session.refresh(rule)
     return rule
 
 
@@ -93,6 +94,7 @@ async def update_rule(
         rule.cooldown_minutes = req.cooldown_minutes
 
     await session.flush()
+    await session.refresh(rule)
     return rule
 
 

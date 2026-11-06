@@ -131,8 +131,8 @@ class TestRunMonitoringCycleE2E:
         # Cleanup
         async with SessionLocal() as session, session.begin():
             await session.execute(
-                text("DELETE FROM alerts WHERE rule_id = :rid"),
-                {"rid": str(rule_id)},
+                text("DELETE FROM alerts WHERE rule_id = :rid OR run_id = :run_id"),
+                {"rid": str(rule_id), "run_id": str(runs.id)},
             )
             await session.execute(
                 text("DELETE FROM monitoring_rule_states WHERE rule_id = :rid"),

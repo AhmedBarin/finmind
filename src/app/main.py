@@ -1,9 +1,10 @@
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
 
 from fastapi import FastAPI
 
 from app.db.session import engine
+from app.monitoring.routers import monitoring_router
 from app.news.router import router as news_router
 from app.news.scheduler import start_scheduler, stop_scheduler
 
@@ -24,6 +25,11 @@ app = FastAPI(
 )
 
 app.include_router(news_router)
+app.include_router(
+    monitoring_router,
+    prefix="/api/v1/monitoring",
+    tags=["monitoring"],
+)
 
 
 @app.get("/health")
