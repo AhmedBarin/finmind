@@ -3,6 +3,7 @@
 from app.monitoring.services.alert_service import AlertService
 from app.monitoring.services.deduplication_service import AlertDeduplicationService
 from app.monitoring.services.freshness_validator import DataFreshnessValidator
+from app.monitoring.services.job_runner import run_monitoring_cycle
 from app.monitoring.services.notification_dispatcher import (
     BaseNotificationDispatcher,
     NoOpNotificationDispatcher,
@@ -14,4 +15,5 @@ __all__ = [
     "BaseNotificationDispatcher",
     "DataFreshnessValidator",
     "NoOpNotificationDispatcher",
+    "run_monitoring_cycle",
 ]
