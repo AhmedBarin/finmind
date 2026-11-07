@@ -31,7 +31,8 @@ class TechnicalSnapshot(Base):
             "ticker",
             "date",
             "config_version",
-            name="uq_technical_snapshots_ticker_date_config",
+            "input_hash",
+            name="uq_technical_snapshots_ticker_date_config_input",
         ),
         CheckConstraint(
             "data_quality_status IN "
@@ -49,6 +50,7 @@ class TechnicalSnapshot(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     config_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    input_hash: Mapped[str] = mapped_column(String(64), nullable=False)
 
     # Scalar fields used by Monitoring. Its composite_score maps to setup_score.
     rsi: Mapped[float | None] = mapped_column(Float)
