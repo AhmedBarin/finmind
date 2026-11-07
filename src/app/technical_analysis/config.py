@@ -3,6 +3,10 @@
 from dataclasses import dataclass
 
 
+CONFIG_VERSION = "technical-v1"
+SNAPSHOT_INPUT_HISTORY_SESSIONS = 300  # Covers 252-session percentiles plus warm-up.
+
+
 # Scoring tables are versioned configuration: a change should be reviewed and
 # assigned a new config_version when snapshots are generated.
 RSI_ANCHORS: dict[str, tuple[tuple[float, float], ...]] = {

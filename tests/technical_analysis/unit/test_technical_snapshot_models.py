@@ -9,11 +9,11 @@ def test_snapshot_exposes_monitoring_signal_fields() -> None:
     assert "setup_score" in columns
 
 
-def test_snapshot_is_versioned_per_ticker_date_and_config() -> None:
+def test_snapshot_is_versioned_per_ticker_date_config_and_input() -> None:
     constraints = [
         constraint
         for constraint in TechnicalSnapshot.__table__.constraints
-        if constraint.name == "uq_technical_snapshots_ticker_date_config"
+        if constraint.name == "uq_technical_snapshots_ticker_date_config_input"
     ]
 
     assert len(constraints) == 1
@@ -21,4 +21,5 @@ def test_snapshot_is_versioned_per_ticker_date_and_config() -> None:
         "ticker",
         "date",
         "config_version",
+        "input_hash",
     ]

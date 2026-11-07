@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Any, Mapping
 
 from sqlalchemy import select
@@ -15,6 +15,7 @@ _REQUIRED_SNAPSHOT_FIELDS = {
     "ticker",
     "date",
     "config_version",
+    "input_hash",
     "data_quality_status",
 }
 _SYSTEM_SNAPSHOT_FIELDS = {"id", "calculated_at"}
@@ -46,31 +47,38 @@ def _snapshot_payload(values: Mapping[str, Any]) -> dict[str, Any]:
     return payload
 
 
-async def upsert_technical_snapshot(
+async def save_technical_snapshot(
     session: AsyncSession,
     values: Mapping[str, Any],
 ) -> TechnicalSnapshot:
-    """Insert/update a snapshot for ``(ticker, date, config_version)``.
+    """Save an immutable snapshot, idempotent for the same input fingerprint.
 
-    Reprocessing the same date with another configuration version creates a
-    separate reproducible row. The caller owns the transaction boundary.
+    A changed input hash or config version creates a new row; an unchanged
+    calculation returns the existing row without overwriting it. The caller
+    owns the transaction boundary.
     """
     payload = _snapshot_payload(values)
+    payload["calculated_at"] = datetime.now(UTC)
     statement = pg_insert(TechnicalSnapshot).values(**payload)
-    conflict_fields = {"ticker", "date", "config_version"}
-    update_fields = set(payload) - conflict_fields
-    updates = {field: getattr(statement.excluded, field) for field in update_fields}
-    updates["calculated_at"] = statement.excluded.calculated_at
-    statement = (
-        statement.on_conflict_do_update(
-            constraint="uq_technical_snapshots_ticker_date_config",
-            set_=updates,
+    statement = statement.on_conflict_do_nothing(
+        constraint="uq_technical_snapshots_ticker_date_config_input"
+    ).returning(TechnicalSnapshot)
+    inserted = await session.scalars(statement)
+    saved = inserted.one_or_none()
+    if saved is not None:
+        return saved
+
+    existing = await session.scalar(
+        select(TechnicalSnapshot).where(
+            TechnicalSnapshot.ticker == payload["ticker"],
+            TechnicalSnapshot.date == payload["date"],
+            TechnicalSnapshot.config_version == payload["config_version"],
+            TechnicalSnapshot.input_hash == payload["input_hash"],
         )
-        .returning(TechnicalSnapshot)
-        .execution_options(populate_existing=True)
     )
-    result = await session.scalars(statement)
-    return result.one()
+    if existing is None:
+        raise RuntimeError("snapshot conflict occurred but existing row was not found")
+    return existing
 
 
 async def get_latest_snapshot(
