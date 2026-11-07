@@ -1,10 +1,10 @@
 import asyncio
 import json
 import re
+from app.companies.catalog import EGX_COMPANIES
 from datetime import datetime
 from urllib.parse import urljoin
 from zoneinfo import ZoneInfo
-
 from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright
 
@@ -14,28 +14,7 @@ from app.news.sources.base import NewsSourceAdapter
 
 CAIRO_TZ = ZoneInfo("Africa/Cairo")
 
-STOCKS = {
-    "COMI": "CIB",
-    "SWDY": "Elsewedy Electric",
-    "ETEL": "Telecom Egypt",
-    "TMGH": "Talaat Moustafa",
-    "FWRY": "Fawry",
-    "EAST": "Eastern Company",
-    "EFID": "eFinance",
-    "HRHO": "EFG Holding",
-    "ORAS": "Orascom Construction",
-    "ORHD": "Orascom Development",
-    "ABUK": "Abu Qir Fertilizers",
-    "MFPC": "MOPCO",
-    "EGAL": "Egypt Aluminium",
-    "SKPC": "SIDPEC",
-    "AMOC": "Alexandria Mineral Oils",
-    "JUFO": "Juhayna",
-    "PHDC": "Palm Hills",
-    "MASR": "Madinet Masr",
-    "TAQA": "Taqa Arabia",
-    "GBCO": "GB Corp",
-}
+STOCKS = EGX_COMPANIES
 
 PREMIUM_PHRASES = (
     "هذا الخبر خاص بخدمة الاخبار المدفوعة من مباشر",
@@ -398,7 +377,7 @@ class MubasherSource(NewsSourceAdapter):
 
         return links
 
-    async def scrape_article(self, page, url: str) -> FetchedArticle | None:
+    async def scrape_article(self, page, url: str, *, listing_ticker: str | None = None,) -> FetchedArticle | None:            
         try:
             response = await page.goto(
                 url,
@@ -431,6 +410,9 @@ class MubasherSource(NewsSourceAdapter):
         elif not body:
             print(f"No readable article body found: {url}")
 
+        raw_metadata = self.extract_raw_metadata(soup)
+        if listing_ticker:
+            raw_metadata["mubasher_listing_tickers"] = [listing_ticker]        
         return FetchedArticle(
             external_article_id=self.article_id_from_url(url),
             source_url=url,
@@ -441,7 +423,7 @@ class MubasherSource(NewsSourceAdapter):
             language="ar",
             author=self.extract_author(soup),
             updated_at_source=self.extract_updated_at(soup),
-            raw_metadata=self.extract_raw_metadata(soup),
+            raw_metadata=raw_metadata,
         )
 
     async def fetch_articles(
@@ -491,7 +473,7 @@ class MubasherSource(NewsSourceAdapter):
                             if not article_id or article_id in seen_ids:
                                 continue
 
-                            article = await self.scrape_article(page, url)
+                            article = await self.scrape_article(page, url, listing_ticker=ticker)
                             if article is None:
                                 continue
 

@@ -5,6 +5,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.news.linking import match_companies
 from app.news.models import NewsArticle, NewsSource
 from app.news.processor import NewsProcessor
 from app.news.repository import NewsRepository
@@ -43,7 +44,6 @@ class NewsService:
     ) -> IngestionSummary:
         adapter = self.registry.get(source_key)
 
-        # Persist the source and the running record before network fetching.
         async with self.session_factory() as session:
             async with session.begin():
                 source = await self.repository.get_or_create_source(
@@ -77,6 +77,10 @@ class NewsService:
                             f"News source not found after creation: {source_key}"
                         )
 
+                    aliases = await self.repository.list_verified_company_aliases(
+                        session
+                    )
+
                     for article in articles:
                         body_cleaned = self.processor.clean_body(
                             article.body_original
@@ -86,21 +90,58 @@ class NewsService:
                         )
                         body_excerpt = self.processor.make_excerpt(body_cleaned)
                         content_hash = self.processor.content_hash(body_cleaned)
+
                         try:
                             async with session.begin_nested():
                                 inserted = await self.repository.save_article(
-                                    content_hash=content_hash,
-                                    session=session,
+                                    session,
                                     source=source,
                                     article=article,
                                     title_normalized=title_normalized,
                                     body_cleaned=body_cleaned,
                                     body_excerpt=body_excerpt,
+                                    content_hash=content_hash,
                                 )
+
+                                article_id = await self.repository.find_article_id(
+                                    session,
+                                    source=source,
+                                    article=article,
+                                    content_hash=content_hash,
+                                )
+                                if article_id is None:
+                                    raise LookupError(
+                                        "Could not find the stored article after save."
+                                    )
+
+                                text_parts = [article.title_original]
+                                if source.content_policy == "full_text" and body_cleaned:
+                                    text_parts.append(body_cleaned)
+                                elif (
+                                    source.content_policy == "excerpt"
+                                    and body_excerpt
+                                ):
+                                    text_parts.append(body_excerpt)
+
+                                matches = match_companies(
+                                        "\n".join(text_parts),
+                                        aliases,
+                                        context_tickers=article.raw_metadata.get(
+                                            "mubasher_listing_tickers",
+                                            [],
+                                        ),
+                                    )
+
+                                await self.repository.upsert_article_company_links(
+                                    session,
+                                    article_id=article_id,
+                                    matches=matches,
+                                )
+
                         except Exception:
                             failed += 1
                             logger.exception(
-                                "Could not store article from source %s",
+                                "Could not store or link article from source %s",
                                 source_key,
                             )
                             continue

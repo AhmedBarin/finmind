@@ -2,13 +2,14 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID, uuid4
 from typing import Any, Optional
-
+from app.companies.models import Company as _Company  # Registers the company FK target
 from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -212,5 +213,88 @@ class NewsIngestionRun(Base):
     run_config_version: Mapped[str] = mapped_column(
         String(50),
         default="v1",
+        nullable=False,
+    )
+
+class ArticleCompanyLink(Base):
+    """Links one article to a company, preserving match status and evidence."""
+
+    __tablename__ = "article_company_links"
+    __table_args__ = (
+        UniqueConstraint(
+            "article_id",
+            "company_id",
+            name="uq_article_company_links_article_company",
+        ),
+        Index(
+            "ix_article_company_links_company_status",
+            "company_id",
+            "link_status",
+        ),
+        CheckConstraint(
+            "link_method IN "
+            "('exact_alias', 'ticker_match', 'model_assisted', 'manual', 'other')",
+            name="ck_article_company_links_method",
+        ),
+        CheckConstraint(
+            "link_status IN ('confirmed', 'candidate', 'ambiguous', 'rejected')",
+            name="ck_article_company_links_status",
+        ),
+        CheckConstraint(
+            "relevance_score IS NULL OR "
+            "(relevance_score >= 0 AND relevance_score <= 1)",
+            name="ck_article_company_links_relevance_range",
+        ),
+        CheckConstraint(
+            "link_confidence IS NULL OR "
+            "(link_confidence >= 0 AND link_confidence <= 1)",
+            name="ck_article_company_links_confidence_range",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+    article_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("news_articles.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    company_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    ticker_at_analysis: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+    )
+    relevance_score: Mapped[Optional[float]] = mapped_column(Float)
+    link_confidence: Mapped[Optional[float]] = mapped_column(Float)
+    link_method: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+    )
+    link_status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+    )
+    evidence_spans: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
         nullable=False,
     )

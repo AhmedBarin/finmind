@@ -1,13 +1,44 @@
-from sqlalchemy import or_, select
+from datetime import date, datetime, timezone
+from uuid import UUID
+
+from sqlalchemy import func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import datetime
-from app.news.models import NewsArticle, NewsSource
+
+from app.companies.models import Company, CompanyAlias as CompanyAliasModel
+from app.news.linking import CompanyAlias, CompanyMatch
+from app.news.models import (
+    ArticleCompanyLink,
+    NewsArticle,
+    NewsIngestionRun,
+    NewsSource,
+)
 from app.news.schemas import FetchedArticle
-from datetime import datetime, timezone
-from app.news.models import NewsArticle, NewsIngestionRun, NewsSource
+
 
 class NewsRepository:
+    @staticmethod
+    def _article_identity_conditions(
+        article: FetchedArticle,
+        content_hash: str | None,
+    ) -> list:
+        conditions = [NewsArticle.source_url == article.source_url]
+
+        if article.external_article_id:
+            conditions.append(
+                NewsArticle.external_article_id == article.external_article_id
+            )
+
+        if article.canonical_url:
+            conditions.append(
+                NewsArticle.canonical_url == article.canonical_url
+            )
+
+        if content_hash:
+            conditions.append(NewsArticle.content_hash == content_hash)
+
+        return conditions
+
     async def get_or_create_source(
         self,
         session: AsyncSession,
@@ -52,24 +83,10 @@ class NewsRepository:
         body_excerpt: str | None,
         content_hash: str | None,
     ) -> bool:
-        identity_conditions = [
-            NewsArticle.source_url == article.source_url,
-        ]
-
-        if article.external_article_id:
-            identity_conditions.append(
-                NewsArticle.external_article_id == article.external_article_id
-            )
-
-        if article.canonical_url:
-            identity_conditions.append(
-                NewsArticle.canonical_url == article.canonical_url
-            )
-
-        if content_hash:
-            identity_conditions.append(
-                NewsArticle.content_hash == content_hash
-            )
+        identity_conditions = self._article_identity_conditions(
+            article,
+            content_hash,
+        )
 
         duplicate_id = await session.scalar(
             select(NewsArticle.id)
@@ -83,9 +100,8 @@ class NewsRepository:
         if duplicate_id is not None:
             return False
 
-        policy = source.content_policy
-        store_full_text = policy == "full_text"
-        store_excerpt = policy in {"excerpt", "full_text"}
+        store_full_text = source.content_policy == "full_text"
+        store_excerpt = source.content_policy in {"excerpt", "full_text"}
 
         values = {
             "source_id": source.id,
@@ -99,7 +115,7 @@ class NewsRepository:
             "body_excerpt": body_excerpt if store_excerpt else None,
             "language": article.language,
             "published_at": article.published_at,
-            "content_rights": policy,
+            "content_rights": source.content_policy,
             "processing_status": "pending",
             "author": article.author,
             "updated_at_source": article.updated_at_source,
@@ -119,6 +135,123 @@ class NewsRepository:
 
         inserted_id = await session.scalar(statement)
         return inserted_id is not None
+
+    async def find_article_id(
+        self,
+        session: AsyncSession,
+        *,
+        source: NewsSource,
+        article: FetchedArticle,
+        content_hash: str | None,
+    ) -> UUID | None:
+        """Find the stored article after an insert or duplicate check."""
+        identity_conditions = self._article_identity_conditions(
+            article,
+            content_hash,
+        )
+
+        return await session.scalar(
+            select(NewsArticle.id)
+            .where(
+                NewsArticle.source_id == source.id,
+                or_(*identity_conditions),
+            )
+            .limit(1)
+        )
+
+    async def list_verified_company_aliases(
+        self,
+        session: AsyncSession,
+        *,
+        as_of: date | None = None,
+    ) -> list[CompanyAlias]:
+        today = as_of or datetime.now(timezone.utc).date()
+
+        statement = (
+            select(
+                CompanyAliasModel.company_id,
+                Company.ticker,
+                CompanyAliasModel.alias_text,
+            )
+            .join(Company, Company.id == CompanyAliasModel.company_id)
+            .where(
+                Company.is_active.is_(True),
+                CompanyAliasModel.verification_status == "verified",
+                or_(
+                    CompanyAliasModel.valid_from.is_(None),
+                    CompanyAliasModel.valid_from <= today,
+                ),
+                or_(
+                    CompanyAliasModel.valid_to.is_(None),
+                    CompanyAliasModel.valid_to >= today,
+                ),
+            )
+            .order_by(
+                CompanyAliasModel.alias_normalized,
+                Company.ticker,
+            )
+        )
+
+        rows = (await session.execute(statement)).all()
+
+        return [
+            CompanyAlias(
+                company_id=company_id,
+                ticker=ticker,
+                alias_text=alias_text,
+            )
+            for company_id, ticker, alias_text in rows
+        ]
+
+    async def upsert_article_company_links(
+        self,
+        session: AsyncSession,
+        *,
+        article_id: UUID,
+        matches: list[CompanyMatch],
+    ) -> None:
+        for match in matches:
+            is_ticker_match = match.matched_alias.casefold() == match.ticker.casefold()
+            if match.status == "candidate":
+                link_method = "other"
+            elif match.matched_alias.casefold() == match.ticker.casefold():
+                link_method = "ticker_match"
+            else:
+                link_method = "exact_alias"
+
+            is_confirmed = match.status == "confirmed"
+
+            values = {
+                "article_id": article_id,
+                "company_id": match.company_id,
+                "ticker_at_analysis": match.ticker,
+                "relevance_score": 1.0 if is_confirmed else None,
+                "link_confidence": 1.0 if is_confirmed else None,
+                "link_method": link_method,
+                "link_status": match.status,
+                "evidence_spans": [
+                    {"matched_alias": match.matched_alias}
+                ],
+            }
+
+            statement = (
+                pg_insert(ArticleCompanyLink)
+                .values(**values)
+                .on_conflict_do_update(
+                    constraint="uq_article_company_links_article_company",
+                    set_={
+                        "ticker_at_analysis": values["ticker_at_analysis"],
+                        "relevance_score": values["relevance_score"],
+                        "link_confidence": values["link_confidence"],
+                        "link_method": values["link_method"],
+                        "link_status": values["link_status"],
+                        "evidence_spans": values["evidence_spans"],
+                        "updated_at": func.now(),
+                    },
+                )
+            )
+            await session.execute(statement)
+
     async def list_articles(
         self,
         session: AsyncSession,
@@ -137,9 +270,7 @@ class NewsRepository:
             ).where(NewsSource.source_key == source_key)
 
         if since:
-            statement = statement.where(
-                NewsArticle.published_at >= since
-            )
+            statement = statement.where(NewsArticle.published_at >= since)
 
         statement = (
             statement
@@ -154,12 +285,11 @@ class NewsRepository:
         result = await session.scalars(statement)
         return list(result.all())
 
-
     async def create_ingestion_run(
         self,
         session: AsyncSession,
         *,
-        source_id: int,
+        source_id: UUID,
     ) -> NewsIngestionRun:
         run = NewsIngestionRun(source_id=source_id)
         session.add(run)
@@ -170,7 +300,7 @@ class NewsRepository:
         self,
         session: AsyncSession,
         *,
-        run_id: int,
+        run_id: UUID,
         status: str,
         items_seen: int,
         items_new: int,
