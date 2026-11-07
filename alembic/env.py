@@ -8,8 +8,10 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from app.core.config import settings
 from app.db.base import Base
+from app.market_data import models as _market_data_models  # noqa: F401
 from app.news import models as _news_models  # Register news models with Base.metadata
 from app.monitoring import models as _monitoring_models  # noqa: F401
+from app.technical_analysis import models as _technical_analysis_models  # noqa: F401
 
 
 config = context.config
