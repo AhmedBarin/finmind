@@ -1,7 +1,7 @@
 """add company and article links
 
 Revision ID: 0e3d7d98e421
-Revises: b16e162cf1ba
+Revises: d54a6c912fb3
 Create Date: 2026-11-07 04:29:56.175952
 
 """
@@ -13,7 +13,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = '0e3d7d98e421'
-down_revision: Union[str, Sequence[str], None] = 'b16e162cf1ba'
+down_revision: Union[str, Sequence[str], None] = 'd54a6c912fb3'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
