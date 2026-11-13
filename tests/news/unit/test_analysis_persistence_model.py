@@ -18,12 +18,19 @@ def test_news_analysis_table_has_versioned_provenance_and_evidence_fields():
         "taxonomy_version",
         "pipeline_version",
         "event_type",
-        "direction",
+        "sentiment",
+        "sentiment_score",
+        "direction_level",
         "relevance_score",
         "novelty_score",
+        "source_reliability",
         "classification_confidence",
+        "summary_en",
+        "key_facts",
+        "contradictions",
         "evidence_spans",
         "requires_human_review",
+        "review_status",
     } <= columns
     assert "impact_score" not in columns
     assert "recommendation" not in columns
@@ -39,7 +46,8 @@ def test_news_analysis_table_compiles_for_postgresql():
     assert "CREATE TABLE news_analyses" in ddl
     assert "REFERENCES news_articles (id) ON DELETE CASCADE" in ddl
     assert "REFERENCES companies (id) ON DELETE SET NULL" in ddl
-    assert "ck_news_analyses_direction" in ddl
+    assert "ck_news_analyses_sentiment" in ddl
+    assert "ck_news_analyses_direction_level" in ddl
     assert "ck_news_analyses_event_type" in ddl
 
 

@@ -48,3 +48,37 @@ class NewsArticleRead(BaseModel):
     pipeline_version: str
     created_at: datetime
     updated_at: datetime
+
+
+class NewsAnalysisRead(BaseModel):
+    """Public response model for one persisted news analysis."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    article_id: UUID
+    company_id: UUID | None
+    analysis_version: str
+    schema_version: str
+    model_provider: str | None
+    model_name: str | None
+    prompt_version: str
+    taxonomy_version: str
+    pipeline_version: str
+    event_type: str
+    sentiment: str
+    sentiment_score: float | None
+    direction_level: str
+    relevance_score: float
+    novelty_score: float
+    source_reliability: float | None
+    classification_confidence: dict[str, float]
+    summary_ar: str | None
+    summary_en: str | None
+    key_facts: list[dict[str, Any]]
+    contradictions: list[dict[str, Any]]
+    evidence_spans: list[dict[str, Any]]
+    requires_human_review: bool
+    review_status: str
+    limitations: list[str]
+    analyzed_at: datetime
