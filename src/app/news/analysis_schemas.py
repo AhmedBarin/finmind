@@ -6,23 +6,12 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
-class NewsSentiment(StrEnum):
-    """Tone toward the identified company or event, separate from materiality."""
+class NewsDirection(StrEnum):
+    """Evidence-backed direction relative to the linked company or event."""
 
     POSITIVE = "positive"
     NEUTRAL = "neutral"
     NEGATIVE = "negative"
-    MIXED = "mixed"
-    UNKNOWN = "unknown"
-
-
-class NewsDirectionLevel(StrEnum):
-    """Estimated materiality of the event; not its positive/negative tone."""
-
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-    CRITICAL = "critical"
     UNKNOWN = "unknown"
 
 
@@ -61,8 +50,7 @@ class NewsFieldConfidence(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     event_type: float = Field(ge=0.0, le=1.0)
-    sentiment: float = Field(ge=0.0, le=1.0)
-    direction_level: float = Field(ge=0.0, le=1.0)
+    direction: float = Field(ge=0.0, le=1.0)
     relevance: float = Field(ge=0.0, le=1.0)
     novelty: float = Field(ge=0.0, le=1.0)
 
@@ -94,8 +82,7 @@ class StructuredNewsAnalysis(BaseModel):
 
     schema_version: Literal["news-analysis-v1"] = "news-analysis-v1"
     event_type: NewsEventType
-    sentiment: NewsSentiment
-    direction_level: NewsDirectionLevel
+    direction: NewsDirection
     relevance_score: float = Field(ge=0.0, le=1.0)
     novelty_score: float = Field(ge=0.0, le=1.0)
     confidence: NewsFieldConfidence
@@ -108,15 +95,12 @@ class StructuredNewsAnalysis(BaseModel):
     @model_validator(mode="after")
     def enforce_evidence_and_review_rules(self) -> "StructuredNewsAnalysis":
         if (
-            self.sentiment == NewsSentiment.UNKNOWN
-            or self.direction_level == NewsDirectionLevel.UNKNOWN
-        ) and not self.requires_human_review:
-            raise ValueError("unknown classification must be flagged for human review")
-        if (
-            self.sentiment not in {NewsSentiment.UNKNOWN, NewsSentiment.MIXED}
-            and not self.evidence_spans
+            self.direction == NewsDirection.UNKNOWN
+            and not self.requires_human_review
         ):
-            raise ValueError("a classified sentiment requires at least one evidence span")
+            raise ValueError("unknown direction must be flagged for human review")
+        if self.direction != NewsDirection.UNKNOWN and not self.evidence_spans:
+            raise ValueError("a classified direction requires at least one evidence span")
         return self
 
 

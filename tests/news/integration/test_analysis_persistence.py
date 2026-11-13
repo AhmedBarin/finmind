@@ -23,14 +23,12 @@ def make_analysis(*, summary: str, relevance: float = 0.9) -> StructuredNewsAnal
     return StructuredNewsAnalysis.model_validate(
         {
             "event_type": "earnings_results",
-            "sentiment": "positive",
-            "direction_level": "high",
+            "direction": "positive",
             "relevance_score": relevance,
             "novelty_score": 0.8,
             "confidence": {
                 "event_type": 0.95,
-                "sentiment": 0.85,
-                "direction_level": 0.85,
+                "direction": 0.85,
                 "relevance": 0.9,
                 "novelty": 0.8,
             },
@@ -160,9 +158,7 @@ async def test_analysis_upsert_is_idempotent_and_preserves_versions():
             assert second_version.id != first.id
             assert latest is not None
             assert latest.analysis_version == "analysis-v2"
-            assert latest.sentiment == "positive"
-            assert latest.direction_level == "high"
-            assert latest.sentiment_score is None
+            assert latest.direction == "positive"
             assert latest.review_status == "not_required"
             assert latest.evidence_spans[0]["quote"] == "Revenue increased by 12%."
 

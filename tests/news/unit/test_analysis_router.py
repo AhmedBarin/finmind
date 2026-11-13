@@ -43,16 +43,13 @@ def analysis_row(article_id, company_id=None):
         taxonomy_version="egx-events-v1",
         pipeline_version="groq-analysis-v1",
         event_type="earnings_results",
-        sentiment="unknown",
-        sentiment_score=None,
-        direction_level="unknown",
+        direction="unknown",
         relevance_score=0.8,
         novelty_score=0.5,
         source_reliability=None,
         classification_confidence={
             "event_type": 0.9,
-            "sentiment": 0.5,
-            "direction_level": 0.5,
+            "direction": 0.5,
             "relevance": 0.8,
             "novelty": 0.5,
         },
@@ -87,8 +84,7 @@ def test_analyze_article_endpoint_returns_persisted_analysis_and_commits():
         app.dependency_overrides.clear()
 
     assert response.status_code == 200
-    assert response.json()["sentiment"] == "unknown"
-    assert response.json()["direction_level"] == "unknown"
+    assert response.json()["direction"] == "unknown"
     assert response.json()["model_name"] == "test-model"
     assert service.call == (session, article_id, company_id)
     assert session.committed is True

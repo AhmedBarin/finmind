@@ -66,9 +66,7 @@ class NewsAnalysisRead(BaseModel):
     taxonomy_version: str
     pipeline_version: str
     event_type: str
-    sentiment: str
-    sentiment_score: float | None
-    direction_level: str
+    direction: str
     relevance_score: float
     novelty_score: float
     source_reliability: float | None
