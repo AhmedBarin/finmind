@@ -298,3 +298,125 @@ class ArticleCompanyLink(Base):
         onupdate=func.now(),
         nullable=False,
     )
+
+
+class NewsAnalysis(Base):
+    """Versioned, evidence-backed analysis for an article and optional company."""
+
+    __tablename__ = "news_analyses"
+    __table_args__ = (
+        CheckConstraint(
+            "direction IN ('positive', 'negative', 'neutral', 'unknown')",
+            name="ck_news_analyses_direction",
+        ),
+        CheckConstraint(
+            "event_type IN ("
+            "'earnings_results', 'revenue_or_profit_change', "
+            "'dividend_announcement', 'capital_increase_or_rights_issue', "
+            "'merger_acquisition_or_disposal', 'management_or_board_change', "
+            "'regulatory_or_legal', 'trading_suspension_or_resumption', "
+            "'material_contract_or_order', 'debt_or_financing', "
+            "'ownership_or_major_shareholder', 'macroeconomic_or_sector', "
+            "'analyst_opinion_or_forecast', 'rumor_or_unverified_claim', "
+            "'routine_corporate_update', 'other', 'unknown')",
+            name="ck_news_analyses_event_type",
+        ),
+        CheckConstraint(
+            "relevance_score >= 0 AND relevance_score <= 1",
+            name="ck_news_analyses_relevance_range",
+        ),
+        CheckConstraint(
+            "novelty_score >= 0 AND novelty_score <= 1",
+            name="ck_news_analyses_novelty_range",
+        ),
+        Index(
+            "ix_news_analyses_article_analyzed_at",
+            "article_id",
+            "analyzed_at",
+        ),
+        Index(
+            "ix_news_analyses_company_analyzed_at",
+            "company_id",
+            "analyzed_at",
+        ),
+        Index(
+            "uq_news_analyses_article_company_version",
+            "article_id",
+            "company_id",
+            "analysis_version",
+            unique=True,
+            postgresql_where=text("company_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_news_analyses_article_only_version",
+            "article_id",
+            "analysis_version",
+            unique=True,
+            postgresql_where=text("company_id IS NULL"),
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+    article_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("news_articles.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    company_id: Mapped[Optional[UUID]] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("companies.id", ondelete="SET NULL"),
+    )
+    analysis_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    schema_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    model_provider: Mapped[Optional[str]] = mapped_column(String(100))
+    model_name: Mapped[Optional[str]] = mapped_column(String(200))
+    prompt_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    taxonomy_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    pipeline_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    direction: Mapped[str] = mapped_column(String(20), nullable=False)
+    relevance_score: Mapped[float] = mapped_column(Float, nullable=False)
+    novelty_score: Mapped[float] = mapped_column(Float, nullable=False)
+    classification_confidence: Mapped[dict[str, float]] = mapped_column(
+        JSONB,
+        nullable=False,
+    )
+    summary_ar: Mapped[Optional[str]] = mapped_column(Text)
+    evidence_spans: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+        nullable=False,
+    )
+    requires_human_review: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default=text("false"),
+        nullable=False,
+    )
+    limitations: Mapped[list[str]] = mapped_column(
+        JSONB,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+        nullable=False,
+    )
+    analyzed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
