@@ -11,6 +11,7 @@ from app.monitoring.scheduler import (
     stop_monitoring_scheduler,
 )
 from app.news.scheduler import start_scheduler, stop_scheduler
+from app.technical_analysis.router import router as technical_router
 
 
 @asynccontextmanager
@@ -36,6 +37,7 @@ app.include_router(
     prefix="/api/v1/monitoring",
     tags=["monitoring"],
 )
+app.include_router(technical_router)
 
 
 @app.get("/health")
