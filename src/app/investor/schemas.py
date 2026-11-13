@@ -1,14 +1,26 @@
 """Investor Agent schemas and deterministic data contracts."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class RiskProfile(StrEnum):
+    CONSERVATIVE = "conservative"
+    MODERATE = "moderate"
+    AGGRESSIVE = "aggressive"
+
+
+class RiskCapacity(StrEnum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+class RiskWillingness(StrEnum):
     CONSERVATIVE = "conservative"
     MODERATE = "moderate"
     AGGRESSIVE = "aggressive"
@@ -33,9 +45,22 @@ class InvestmentExperience(StrEnum):
     ADVANCED = "advanced"
 
 
+class ProfileAuditChangeType(StrEnum):
+    INITIAL_CREATION = "initial_creation"
+    USER_EDIT = "user_edit"
+    RE_PROFILING = "re_profiling"
+    PREFERENCE_UPDATE = "preference_update"
+
+
+class AuditChangedBy(StrEnum):
+    USER = "user"
+    ADMIN = "admin"
+    SCHEDULED_REVIEW = "scheduled_review"
+
+
 # Deterministic mapping of risk profile to technical gating parameters
 # (liquidity_floor_pct, max_atr_pctl_cap)
-# Reference: FinMind Unified Spec, Section 6.2
+# Reference: FinMind Unified Spec, Section 6.2 & Module 2 Section 4.5
 GATING_MATRIX: dict[RiskProfile, tuple[float, float]] = {
     RiskProfile.CONSERVATIVE: (50.0, 60.0),
     RiskProfile.MODERATE: (70.0, 75.0),
@@ -54,6 +79,20 @@ def compute_gating_parameters(risk_profile: RiskProfile) -> tuple[float, float]:
     return GATING_MATRIX[risk_profile]
 
 
+def _normalize_string_list(values: list[str], *, uppercase: bool = False) -> list[str]:
+    """Strip blanks and deduplicate while preserving order."""
+    seen: set[str] = set()
+    normalized: list[str] = []
+    for raw in values:
+        cleaned = raw.strip()
+        if uppercase:
+            cleaned = cleaned.upper()
+        if cleaned and cleaned not in seen:
+            seen.add(cleaned)
+            normalized.append(cleaned)
+    return normalized
+
+
 class InvestorProfileBase(BaseModel):
     """Base fields shared across profile representations."""
 
@@ -65,6 +104,15 @@ class InvestorProfileBase(BaseModel):
     excluded_tickers: list[str] = Field(default_factory=list)
     preferred_sectors: list[str] = Field(default_factory=list)
 
+    @model_validator(mode="after")
+    def _clean_lists(self) -> "InvestorProfileBase":
+        self.excluded_sectors = _normalize_string_list(self.excluded_sectors)
+        self.excluded_tickers = _normalize_string_list(
+            self.excluded_tickers, uppercase=True
+        )
+        self.preferred_sectors = _normalize_string_list(self.preferred_sectors)
+        return self
+
 
 class InvestorProfileDraft(BaseModel):
     """In-progress draft accumulated during conversational interview turns.
@@ -74,6 +122,8 @@ class InvestorProfileDraft(BaseModel):
 
     risk_tolerance_raw: str | None = None
     risk_capacity_raw: str | None = None
+    risk_capacity: RiskCapacity | None = None
+    risk_willingness: RiskWillingness | None = None
     derived_risk_profile: RiskProfile | None = None
     investment_horizon: InvestmentHorizon | None = None
     investment_goal: InvestmentGoal | None = None
@@ -100,7 +150,34 @@ class InvestorProfileConfirmRequest(InvestorProfileBase):
     Allows user to review and optionally edit parameters before confirming.
     """
 
-    pass
+    reason: str | None = Field(default=None, max_length=500)
+
+
+class ConstraintsUpdateRequest(BaseModel):
+    """Partial update request for excluded sectors, tickers, or preferred sectors."""
+
+    excluded_sectors: list[str] | None = None
+    excluded_tickers: list[str] | None = None
+    preferred_sectors: list[str] | None = None
+    reason: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def _validate_non_empty_update(self) -> "ConstraintsUpdateRequest":
+        if (
+            self.excluded_sectors is None
+            and self.excluded_tickers is None
+            and self.preferred_sectors is None
+        ):
+            raise ValueError("At least one constraint list must be provided")
+        if self.excluded_sectors is not None:
+            self.excluded_sectors = _normalize_string_list(self.excluded_sectors)
+        if self.excluded_tickers is not None:
+            self.excluded_tickers = _normalize_string_list(
+                self.excluded_tickers, uppercase=True
+            )
+        if self.preferred_sectors is not None:
+            self.preferred_sectors = _normalize_string_list(self.preferred_sectors)
+        return self
 
 
 class InvestorProfilePayload(InvestorProfileBase):
@@ -143,6 +220,95 @@ class InvestorProfilePayload(InvestorProfileBase):
             max_atr_pctl_cap=max_atr_cap,
             profile_version=profile_version,
             is_active=True,
-            confirmed_at=confirmed_at or datetime.now(),
+            confirmed_at=confirmed_at or datetime.now(UTC),
         )
 
+
+class ExtractedProfileParameters(InvestorProfileBase):
+    """Profile parameters presented inside the HITL summary card before DB save."""
+
+    liquidity_floor_pct: Annotated[float, Field(ge=0.0, le=100.0)]
+    max_atr_pctl_cap: Annotated[float, Field(ge=0.0, le=100.0)]
+
+
+class ProfileSummaryCardAr(BaseModel):
+    """Arabic display payload for Human-in-the-Loop confirmation (Spec Section 9)."""
+
+    title: str
+    risk_level_display: str
+    horizon_display: str
+    goal_display: str
+    experience_display: str
+    constraints_summary: list[str] = Field(default_factory=list)
+    recommendation_engine_impact: str
+
+
+class HITLSummaryCard(BaseModel):
+    """Complete HITL review payload emitted when interview dimensions are complete."""
+
+    profile_summary_ar: ProfileSummaryCardAr
+    extracted_parameters: ExtractedProfileParameters
+    requires_user_confirmation: bool = True
+
+
+class InterviewMessageRequest(BaseModel):
+    """Incoming chat message payload for POST /investor/interview/message."""
+
+    session_id: UUID
+    message: str = Field(min_length=1, max_length=2000)
+
+
+class InterviewStateView(BaseModel):
+    """Public snapshot of interview progress returned alongside agent turns."""
+
+    current_step: str | None = None
+    is_complete: bool = False
+    missing_dimensions: list[str] = Field(default_factory=list)
+    detected_conflicts: list[str] = Field(default_factory=list)
+    safety_cap_applied: bool = False
+
+
+class InterviewMessageResponse(BaseModel):
+    """Outgoing interview response payload (Spec Section 10.1)."""
+
+    session_id: UUID
+    agent_message_ar: str
+    state: InterviewStateView
+    summary_card: HITLSummaryCard | None = None
+
+
+class ProfileAuditLogRead(BaseModel):
+    """Serialized view of an immutable profile audit log entry."""
+
+    id: UUID
+    profile_id: UUID
+    user_id: UUID
+    change_type: ProfileAuditChangeType
+    previous_state: dict[str, Any] | None = None
+    new_state: dict[str, Any]
+    reason: str | None = None
+    changed_by: AuditChangedBy
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class LearnedPreferenceCreate(BaseModel):
+    """Validated input for recording an inferred preference (Spec Section 4.2)."""
+
+    preference_key: str = Field(min_length=1, max_length=100)
+    preference_value: dict[str, Any]
+    confidence_score: Annotated[float, Field(ge=0.0, le=1.0)]
+    source_event: str = Field(min_length=1, max_length=100)
+    user_validated: bool = False
+
+
+class LearnedPreferenceRead(LearnedPreferenceCreate):
+    """Serialized view of a persisted learned preference."""
+
+    id: UUID
+    user_id: UUID
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
