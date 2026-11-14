@@ -449,3 +449,102 @@ class NewsAnalysis(Base):
         onupdate=func.now(),
         nullable=False,
     )
+
+
+class NewsSignal(Base):
+    """Versioned, deterministic company-level news signal for downstream use."""
+
+    __tablename__ = "news_signals"
+    __table_args__ = (
+        UniqueConstraint(
+            "company_id",
+            "aggregation_config_version",
+            "input_hash",
+            name="uq_news_signals_company_config_input",
+        ),
+        CheckConstraint(
+            "direction IN ('positive', 'negative', 'neutral', 'unknown')",
+            name="ck_news_signals_direction",
+        ),
+        CheckConstraint(
+            "coverage_status IN "
+            "('available', 'no_relevant_news', 'stale', 'partial', 'unavailable')",
+            name="ck_news_signals_coverage_status",
+        ),
+        CheckConstraint(
+            "article_count >= 0 AND eligible_article_count >= 0",
+            name="ck_news_signals_nonnegative_counts",
+        ),
+        CheckConstraint(
+            "freshness_seconds IS NULL OR freshness_seconds >= 0",
+            name="ck_news_signals_freshness_nonnegative",
+        ),
+        Index(
+            "ix_news_signals_company_as_of",
+            "company_id",
+            "as_of",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+    company_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    as_of: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    window_start: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    window_end: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    signal_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    aggregation_config_version: Mapped[str] = mapped_column(
+        String(50), nullable=False
+    )
+    input_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    direction: Mapped[str] = mapped_column(String(20), nullable=False)
+    article_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    eligible_article_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    coverage_status: Mapped[str] = mapped_column(String(30), nullable=False)
+    freshness_seconds: Mapped[Optional[int]] = mapped_column(Integer)
+    top_event_types: Mapped[dict[str, int]] = mapped_column(
+        JSONB,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+        nullable=False,
+    )
+    contributing_article_ids: Mapped[list[str]] = mapped_column(
+        JSONB,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+        nullable=False,
+    )
+    contributing_analysis_ids: Mapped[list[str]] = mapped_column(
+        JSONB,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+        nullable=False,
+    )
+    reason_codes: Mapped[list[str]] = mapped_column(
+        JSONB,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+        nullable=False,
+    )
+    limitations: Mapped[list[str]] = mapped_column(
+        JSONB,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
