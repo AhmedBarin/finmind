@@ -39,8 +39,11 @@ class InvestorAgentState(TypedDict, total=False):
     safety_cap_reason_ar: str | None
     zero_loss_high_return_claim: bool
     off_topic_redirect: bool
+    injection_detected: bool
+    unclear_input: bool
     is_complete: bool
     is_confirmed: bool
+    confirmed_profile_id: str | None
     agent_message_ar: str
     clarification_prompt_ar: str | None
     summary_card_ar: dict[str, Any] | None

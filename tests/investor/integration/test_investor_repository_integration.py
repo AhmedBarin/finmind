@@ -4,6 +4,7 @@ from uuid import uuid4
 
 import pytest
 import pytest_asyncio
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.db.session import SessionLocal, engine
 from app.investor.repository import (
@@ -28,6 +29,13 @@ from app.investor.schemas import (
 
 @pytest_asyncio.fixture
 async def db_session():
+    try:
+        async with engine.connect():
+            pass
+    except (OSError, SQLAlchemyError) as exc:
+        await engine.dispose()
+        pytest.skip(f"PostgreSQL not reachable for integration tests: {type(exc).__name__}")
+
     try:
         async with SessionLocal() as session:
             transaction = await session.begin()

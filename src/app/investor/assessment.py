@@ -222,3 +222,20 @@ def is_off_topic_stock_query(message: str) -> bool:
     lowered = message.strip().lower()
     return _OFF_TOPIC_TRADE_RE.search(lowered) is not None
 
+
+
+_PROMPT_INJECTION_RE = re.compile(
+    r"(ignore\s+(?:all\s+|the\s+)?(?:previous|above|prior)\s+(?:instructions|rules|prompts?)"
+    r"|disregard\s+(?:all\s+|the\s+)?(?:previous|above|prior)"
+    r"|system\s*prompt|you\s+are\s+now|act\s+as\s+(?:a|an)\s"
+    r"|developer\s+mode|jailbreak"
+    r"|تجاهل\s+(?:كل\s+|جميع\s+)?(?:التعليمات|الأوامر|القواعد)"
+    r"|انس(?:ى)?\s+(?:كل\s+)?(?:التعليمات|الأوامر|القواعد)"
+    r"|أنت\s+الآن|انت\s+الان|تعليمات\s+النظام)",
+    re.IGNORECASE,
+)
+
+
+def is_prompt_injection_attempt(message: str) -> bool:
+    """Detect common Arabic/English prompt-injection phrasing (Spec Section 11)."""
+    return _PROMPT_INJECTION_RE.search(message) is not None

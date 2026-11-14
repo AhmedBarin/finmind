@@ -263,6 +263,7 @@ class InterviewStateView(BaseModel):
 
     current_step: str | None = None
     is_complete: bool = False
+    is_confirmed: bool = False
     missing_dimensions: list[str] = Field(default_factory=list)
     detected_conflicts: list[str] = Field(default_factory=list)
     safety_cap_applied: bool = False
@@ -312,3 +313,53 @@ class LearnedPreferenceRead(LearnedPreferenceCreate):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+RISK_PROFILE_RANK: dict[RiskProfile, int] = {
+    RiskProfile.CONSERVATIVE: 0,
+    RiskProfile.MODERATE: 1,
+    RiskProfile.AGGRESSIVE: 2,
+}
+
+
+class ProfileOverrides(BaseModel):
+    """User edits applied to the HITL summary card before confirmation."""
+
+    risk_profile: RiskProfile | None = None
+    investment_horizon: InvestmentHorizon | None = None
+    investment_goal: InvestmentGoal | None = None
+    investment_experience: InvestmentExperience | None = None
+    excluded_sectors: list[str] | None = None
+    excluded_tickers: list[str] | None = None
+    preferred_sectors: list[str] | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class SessionConfirmRequest(BaseModel):
+    """HITL confirmation for POST /investor/profile/confirm (Spec Section 10.2).
+
+    ``session_id`` identifies the interview whose summary card is being
+    confirmed (the spec's ``draft_profile_id``). Raising the risk level above
+    the derived/capped value requires ``accept_risk_disclaimer``.
+    """
+
+    session_id: UUID
+    user_overrides: ProfileOverrides | None = None
+    accept_risk_disclaimer: bool = False
+    reason: str | None = Field(default=None, max_length=500)
+
+
+class ConfirmedProfileResponse(BaseModel):
+    """Activated profile returned after HITL confirmation."""
+
+    profile_id: UUID
+    profile: InvestorProfilePayload
+    agent_message_ar: str
+
+
+class RecommendationFeedbackRequest(BaseModel):
+    """Episodic feedback on a recommendation or alert (Spec Section 7.1, tier 3)."""
+
+    feedback: str = Field(pattern="^(too_volatile|good_timing|not_interested)$")
+    ticker: str | None = Field(default=None, max_length=20)

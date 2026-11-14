@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-import re
-from typing import Any, Protocol
+from typing import Any
 from uuid import UUID
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -12,7 +10,13 @@ from langgraph.graph import END, START, StateGraph
 
 from app.investor.assessment import (
     is_off_topic_stock_query,
+    is_prompt_injection_attempt,
     validate_coherence,
+)
+from app.investor.extraction import (
+    ExtractionPatch,
+    InterviewTurnExtractor,
+    RuleBasedArabicExtractor,
 )
 from app.investor.schemas import (
     HITLSummaryCard,
@@ -21,9 +25,7 @@ from app.investor.schemas import (
     InvestmentExperience,
     InvestmentGoal,
     InvestmentHorizon,
-    RiskCapacity,
     RiskProfile,
-    RiskWillingness,
 )
 from app.investor.state import InvestorAgentState
 from app.investor.summary import build_hitl_summary_card
@@ -53,121 +55,30 @@ _OFF_TOPIC_MESSAGE_AR = (
     "يجب أولاً إتمام وتأكيد ملفك الاستثماري حتى يتمكن محرك التوصيات من تقييم الأسهم المناسبة لك."
 )
 
+_INJECTION_MESSAGE_AR = (
+    "دوري هنا هو مساعدتك في إعداد ملفك الاستثماري فقط، ولا يمكنني تغيير قواعد عملي. "
+    "دعنا نكمل من حيث توقفنا."
+)
 
-@dataclass
-class ExtractionPatch:
-    """Structured slots extracted from a single user message."""
+_UNCLEAR_MESSAGE_AR = "معلش، مقدرتش أفهم إجابتك كويس. ممكن توضحها بشكل أبسط؟"
 
-    investment_goal: InvestmentGoal | None = None
-    investment_horizon: InvestmentHorizon | None = None
-    risk_capacity: RiskCapacity | None = None
-    risk_willingness: RiskWillingness | None = None
-    risk_capacity_raw: str | None = None
-    risk_tolerance_raw: str | None = None
-    investment_experience: InvestmentExperience | None = None
-    excluded_sectors: list[str] = field(default_factory=list)
-    excluded_tickers: list[str] = field(default_factory=list)
-    preferred_sectors: list[str] = field(default_factory=list)
-    zero_loss_high_return_claim: bool = False
+_TURN_FLAGS_RESET: dict[str, Any] = {
+    "off_topic_redirect": False,
+    "injection_detected": False,
+    "unclear_input": False,
+    "zero_loss_high_return_claim": False,
+}
 
 
-class InterviewTurnExtractor(Protocol):
-    """Abstraction allowing Phase 3 LLM extractors to replace deterministic rules."""
-
-    def extract(self, message: str, state: InvestorAgentState) -> ExtractionPatch:
-        ...
-
-
-class RuleBasedArabicExtractor:
-    """Deterministic Arabic/English slot extractor for Phase 2 workflow verification."""
-
-    _GOAL_RULES: tuple[tuple[tuple[str, ...], InvestmentGoal], ...] = (
-        (("مضاربة", "مضارب", "سريعة", "speculat"), InvestmentGoal.SPECULATION),
-        (("توزيعات", "دخل", "أرباح دورية", "income", "dividend"), InvestmentGoal.INCOME),
-        (("حماية", "الحفاظ", "مدخرات", "تحوط", "preservation", "preserve"), InvestmentGoal.CAPITAL_PRESERVATION),
-        (("تنمية", "نمو", "growth"), InvestmentGoal.GROWTH),
-    )
-
-    _HORIZON_RULES: tuple[tuple[tuple[str, ...], InvestmentHorizon], ...] = (
-        (("قصير الأجل", "قصير", "أسبوع", "أسبوعين", "أسابيع", "أيام", "يومي", "short"), InvestmentHorizon.SHORT),
-        (("متوسط الأجل", "أشهر", "شهور", "1 إلى 6", "medium"), InvestmentHorizon.MEDIUM),
-        (("طويل الأجل", "طويل", "عام", "سنة", "سنوات", "أكثر من 6", "long"), InvestmentHorizon.LONG),
-    )
-
-    _CAPACITY_RULES: tuple[tuple[tuple[str, ...], RiskCapacity], ...] = (
-        (("طوارئ", "التزامات", "ديون", "قرض", "محتاجها قريب", "مرتبطة", "low capacity"), RiskCapacity.LOW),
-        (("فائض كبير", "قدرة عالية", "سيولة مرتفعة", "لا أحتاجها", "high capacity"), RiskCapacity.HIGH),
-        (("فائضة", "فائض", "مستقرة", "قدرة متوسطة", "medium capacity"), RiskCapacity.MEDIUM),
-    )
-
-    _WILLINGNESS_RULES: tuple[tuple[tuple[str, ...], RiskWillingness], ...] = (
-        (("متحفظ", "لا أتحمل", "أرفض الخسارة", "أقل مخاطرة", "conservative"), RiskWillingness.CONSERVATIVE),
-        (("أتحمل التذبذب", "مخاطرة عالية", "أقبل المخاطرة", "مخاطرة مرتفعة", "هجومي", "aggressive"), RiskWillingness.AGGRESSIVE),
-        (("معتدل", "متوازن", "تقلبات معقولة", "مخاطرة متوسطة", "moderate"), RiskWillingness.MODERATE),
-    )
-
-    _EXPERIENCE_RULES: tuple[tuple[tuple[str, ...], InvestmentExperience], ...] = (
-        (("خبرة متقدمة", "متقدم", "خبرة طويلة", "أكثر من 3 سنوات", "محترف", "advanced"), InvestmentExperience.ADVANCED),
-        (("خبرة متوسطة", "خبرتي متوسطة", "سنة إلى 3", "intermediate"), InvestmentExperience.INTERMEDIATE),
-        (("مبتدئ", "جديد", "أول مرة", "أقل من سنة", "beginner"), InvestmentExperience.BEGINNER),
-    )
-
-    _NO_RISK_HIGH_RETURN_RE = re.compile(
-        r"(بدون\s*(?:أي\s*)?مخاطر(?:ة)?|بلا\s*خسار(?:ة)?|zero\s*risk|no\s*risk)"
-    )
-    _HIGH_RETURN_RE = re.compile(r"(ربح\s*سريع|أرباح\s*(?:عالية|سريعة)|30%|مضاربة|high\s*return)")
-
-    def extract(self, message: str, state: InvestorAgentState) -> ExtractionPatch:
-        text = message.strip()
-        lowered = text.lower()
-        current_dim = state.get("current_dimension")
-        patch = ExtractionPatch()
-
-        for keywords, goal in self._GOAL_RULES:
-            if any(kw in lowered for kw in keywords):
-                patch.investment_goal = goal
-                break
-
-        for keywords, horizon in self._HORIZON_RULES:
-            if any(kw in lowered for kw in keywords):
-                patch.investment_horizon = horizon
-                break
-        if patch.investment_horizon is None and current_dim == "investment_horizon" and "متوسط" in lowered:
-            patch.investment_horizon = InvestmentHorizon.MEDIUM
-
-        for keywords, capacity in self._CAPACITY_RULES:
-            if any(kw in lowered for kw in keywords):
-                patch.risk_capacity = capacity
-                patch.risk_capacity_raw = text
-                break
-
-        for keywords, willingness in self._WILLINGNESS_RULES:
-            if any(kw in lowered for kw in keywords):
-                patch.risk_willingness = willingness
-                patch.risk_tolerance_raw = text
-                break
-
-        for keywords, experience in self._EXPERIENCE_RULES:
-            if any(kw in lowered for kw in keywords):
-                patch.investment_experience = experience
-                break
-        if patch.investment_experience is None and current_dim == "investment_experience" and "متوسط" in lowered:
-            patch.investment_experience = InvestmentExperience.INTERMEDIATE
-
-        if self._NO_RISK_HIGH_RETURN_RE.search(lowered) and self._HIGH_RETURN_RE.search(lowered):
-            patch.zero_loss_high_return_claim = True
-            patch.risk_willingness = patch.risk_willingness or RiskWillingness.AGGRESSIVE
-            patch.risk_tolerance_raw = text
-
-        if "التبغ" in text or "tobacco" in lowered:
-            patch.excluded_sectors.append("Tobacco")
-        if "العقارات" in text or "real estate" in lowered:
-            if "تفضيل" in text or "أفضل" in text or "prefer" in lowered:
-                patch.preferred_sectors.append("Real Estate")
-            elif "استبعاد" in text or "بعيد" in text or "exclude" in lowered:
-                patch.excluded_sectors.append("Real Estate")
-
-        return patch
+def _redirect_prefix(state: InvestorAgentState) -> str | None:
+    """Arabic notice for turns that were redirected instead of extracted."""
+    if state.get("injection_detected"):
+        return _INJECTION_MESSAGE_AR
+    if state.get("off_topic_redirect"):
+        return _OFF_TOPIC_MESSAGE_AR
+    if state.get("unclear_input"):
+        return _UNCLEAR_MESSAGE_AR
+    return None
 
 
 def _extract_message_text(msg: Any) -> str:
@@ -197,20 +108,20 @@ def build_interview_graph(
         latest_text = _extract_message_text(messages[-1]) if messages else ""
 
         if not latest_text.strip():
-            return {
-                "off_topic_redirect": False,
-                "zero_loss_high_return_claim": False,
-            }
+            return dict(_TURN_FLAGS_RESET)
+
+        # Injection attempts are never passed to the extractor (Spec Section 11):
+        # the agent resets to the current profiling dimension instead.
+        if is_prompt_injection_attempt(latest_text):
+            return {**_TURN_FLAGS_RESET, "injection_detected": True}
 
         if is_off_topic_stock_query(latest_text):
-            return {
-                "off_topic_redirect": True,
-                "zero_loss_high_return_claim": False,
-            }
+            return {**_TURN_FLAGS_RESET, "off_topic_redirect": True}
 
         patch = turn_extractor.extract(latest_text, state)
         updates: dict[str, Any] = {
-            "off_topic_redirect": False,
+            **_TURN_FLAGS_RESET,
+            "unclear_input": patch.is_empty(),
             "zero_loss_high_return_claim": patch.zero_loss_high_return_claim,
         }
 
@@ -267,8 +178,8 @@ def build_interview_graph(
         }
 
     def route_after_validation(state: InvestorAgentState) -> str:
-        if state.get("off_topic_redirect"):
-            return "select_next_question"
+        # Redirected turns that happen after all slots are filled re-present the
+        # summary card rather than asking a question that has no next dimension.
         if state.get("detected_conflicts"):
             return "select_next_question"
         if not state.get("is_complete"):
@@ -277,10 +188,17 @@ def build_interview_graph(
 
     def select_next_question(state: InvestorAgentState) -> dict[str, Any]:
         missing = state.get("missing_dimensions") or []
-        next_dim = missing[0] if missing else state.get("current_dimension") or "investment_goal"
+        current = state.get("current_dimension")
+        if missing:
+            next_dim = missing[0]
+        elif current in _DIMENSION_QUESTIONS_AR:
+            next_dim = str(current)
+        else:
+            next_dim = "investment_goal"
 
-        if state.get("off_topic_redirect"):
-            prompt = f"{_OFF_TOPIC_MESSAGE_AR}\n\n{_DIMENSION_QUESTIONS_AR[next_dim]}"
+        prefix = _redirect_prefix(state)
+        if prefix is not None:
+            prompt = f"{prefix}\n\n{_DIMENSION_QUESTIONS_AR[next_dim]}"
         elif state.get("detected_conflicts") and state.get("clarification_prompt_ar"):
             prompt = str(state["clarification_prompt_ar"])
         else:
@@ -316,6 +234,9 @@ def build_interview_graph(
         )
         if state.get("safety_cap_applied") and state.get("safety_cap_reason_ar"):
             intro = f"{state['safety_cap_reason_ar']}\n\n{intro}"
+        prefix = _redirect_prefix(state)
+        if prefix is not None and not state.get("unclear_input"):
+            intro = f"{prefix}\n\n{intro}"
 
         return {
             "current_dimension": "hitl_confirmation",
@@ -348,6 +269,63 @@ def build_interview_graph(
     return workflow.compile(checkpointer=checkpointer)
 
 
+def _thread_config(session_id: UUID) -> dict[str, Any]:
+    return {"configurable": {"thread_id": str(session_id)}}
+
+
+def state_to_response(
+    session_id: UUID,
+    values: InvestorAgentState | dict[str, Any],
+) -> InterviewMessageResponse:
+    """Format persisted graph state values as the public interview response."""
+    summary_raw = values.get("summary_card_ar")
+    summary_card = (
+        HITLSummaryCard.model_validate(summary_raw)
+        if summary_raw is not None
+        else None
+    )
+    return InterviewMessageResponse(
+        session_id=session_id,
+        agent_message_ar=str(values.get("agent_message_ar", "")),
+        state=InterviewStateView(
+            current_step=values.get("current_dimension"),
+            is_complete=bool(values.get("is_complete", False)),
+            is_confirmed=bool(values.get("is_confirmed", False)),
+            missing_dimensions=list(values.get("missing_dimensions") or []),
+            detected_conflicts=list(values.get("detected_conflicts") or []),
+            safety_cap_applied=bool(values.get("safety_cap_applied", False)),
+        ),
+        summary_card=summary_card,
+    )
+
+
+async def get_session_values(graph: Any, session_id: UUID) -> dict[str, Any]:
+    """Return the checkpointed state values for a session (empty dict if new)."""
+    snapshot = await graph.aget_state(_thread_config(session_id))
+    return dict(snapshot.values or {})
+
+
+async def mark_session_confirmed(
+    graph: Any,
+    *,
+    session_id: UUID,
+    profile_id: UUID,
+    message_ar: str,
+) -> None:
+    """Close the HITL gate on a session once its profile is persisted and active."""
+    await graph.aupdate_state(
+        _thread_config(session_id),
+        {
+            "is_confirmed": True,
+            "confirmed_profile_id": str(profile_id),
+            "current_dimension": "confirmed",
+            "agent_message_ar": message_ar,
+            "messages": [{"role": "assistant", "content": message_ar}],
+        },
+        as_node="generate_summary_card",
+    )
+
+
 async def run_interview_turn(
     graph: Any,
     *,
@@ -362,23 +340,18 @@ async def run_interview_turn(
             "session_id": str(session_id),
             "messages": [{"role": "user", "content": message}],
         },
-        config={"configurable": {"thread_id": str(session_id)}},
+        config=_thread_config(session_id),
     )
-    summary_raw = result.get("summary_card_ar")
-    summary_card = (
-        HITLSummaryCard.model_validate(summary_raw)
-        if summary_raw is not None
-        else None
-    )
-    return InterviewMessageResponse(
-        session_id=session_id,
-        agent_message_ar=str(result.get("agent_message_ar", "")),
-        state=InterviewStateView(
-            current_step=result.get("current_dimension"),
-            is_complete=bool(result.get("is_complete", False)),
-            missing_dimensions=list(result.get("missing_dimensions") or []),
-            detected_conflicts=list(result.get("detected_conflicts") or []),
-            safety_cap_applied=bool(result.get("safety_cap_applied", False)),
-        ),
-        summary_card=summary_card,
-    )
+    return state_to_response(session_id, result)
+
+
+__all__ = [
+    "ExtractionPatch",
+    "InterviewTurnExtractor",
+    "RuleBasedArabicExtractor",
+    "build_interview_graph",
+    "get_session_values",
+    "mark_session_confirmed",
+    "run_interview_turn",
+    "state_to_response",
+]
