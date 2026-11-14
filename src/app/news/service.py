@@ -10,6 +10,14 @@ from app.news.models import NewsArticle, NewsSource
 from app.news.processor import NewsProcessor
 from app.news.repository import NewsRepository
 from app.news.sources.registry import SourceRegistry
+from app.news.tool_repository import NewsToolRepository, ToolArticleRow
+from app.agents.news_agent.schemas import (
+    CompanyNewsRequest,
+    NewsToolArticle,
+    NewsToolData,
+    RecentNewsRequest,
+    SearchNewsRequest,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -35,6 +43,7 @@ class NewsService:
         self.registry = registry
         self.repository = NewsRepository()
         self.processor = NewsProcessor()
+        self.tool_repository = NewsToolRepository()
 
     async def ingest_source(
         self,
@@ -203,3 +212,67 @@ class NewsService:
                 source_key=source_key,
                 since=since,
             )
+
+    async def search_news(self, session: AsyncSession, request: SearchNewsRequest) -> NewsToolData:
+        rows = await self.tool_repository.list_articles(
+            session, query=request.query, company_id=request.company_id,
+            tickers=request.tickers,
+            start_at=request.start_at, end_at=request.end_at,
+            event_types=request.event_types, directions=request.directions,
+            source_types=request.source_types, language=request.language,
+            limit=request.limit,
+        )
+        return self._tool_data(rows)
+
+    async def get_recent_news(self, session: AsyncSession, request: RecentNewsRequest) -> NewsToolData:
+        rows = await self.tool_repository.list_articles(
+            session, company_id=request.company_id, tickers=request.tickers, start_at=request.start_at,
+            end_at=request.end_at, event_types=request.event_types,
+            directions=request.directions, source_types=request.source_types,
+            language=request.language, limit=request.limit,
+        )
+        return self._tool_data(rows)
+
+    async def get_company_news(self, session: AsyncSession, request: CompanyNewsRequest) -> NewsToolData:
+        company = await self.tool_repository.resolve_company(
+            session, ticker=request.ticker, company_id=request.company_id
+        )
+        if company is None:
+            raise LookupError("Company not found")
+        rows = await self.tool_repository.list_articles(
+            session, company_id=company.id, start_at=request.start_at,
+            end_at=request.end_at, event_types=request.event_types,
+            directions=request.directions, source_types=request.source_types,
+            language=request.language, limit=request.limit,
+        )
+        return self._tool_data(rows)
+
+    @staticmethod
+    def _tool_data(rows: list[ToolArticleRow]) -> NewsToolData:
+        articles = []
+        for row in rows:
+            article = row.article
+            # Full text is deliberately never returned by these bounded tools.
+            snippet = article.title_original
+            if article.content_rights in {"excerpt", "full_text", "full_text_permitted"}:
+                snippet = article.body_excerpt or article.title_original
+            analysis = row.analysis
+            articles.append(NewsToolArticle(
+                article_id=article.id,
+                title=article.title_original,
+                published_at=article.published_at,
+                source_name=row.source.name,
+                source_type=row.source.source_type,
+                source_url=article.source_url,
+                language=article.language,
+                content_rights=article.content_rights,
+                snippet=snippet,
+                relevance_score=(analysis.relevance_score if analysis else None),
+                ticker_links=list(row.company_tickers),
+                link_confidence=[link.link_confidence for link in row.links if link.link_confidence is not None],
+                direction=(analysis.direction if analysis else None),
+                event_type=(analysis.event_type if analysis else None),
+                analysis_status=(analysis.review_status if analysis else "not_analyzed"),
+                evidence=(analysis.evidence_spans if analysis else []),
+            ))
+        return NewsToolData(articles=articles, coverage_status="available" if articles else "no_relevant_news")
