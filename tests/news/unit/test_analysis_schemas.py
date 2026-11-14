@@ -3,7 +3,8 @@ from pydantic import ValidationError
 
 from app.news.analysis_schemas import (
     EvidenceSourceField,
-    NewsDirection,
+    NewsDirectionLevel,
+    NewsSentiment,
     StructuredNewsAnalysis,
     validate_evidence_against_article,
 )
@@ -12,12 +13,14 @@ from app.news.analysis_schemas import (
 def make_valid_analysis(**overrides: object) -> StructuredNewsAnalysis:
     data: dict[str, object] = {
         "event_type": "earnings_results",
-        "direction": "positive",
+        "sentiment": "positive",
+        "direction_level": "medium",
         "relevance_score": 0.9,
         "novelty_score": 0.8,
         "confidence": {
             "event_type": 0.95,
-            "direction": 0.85,
+            "sentiment": 0.85,
+            "direction_level": 0.75,
             "relevance": 0.9,
             "novelty": 0.8,
         },
@@ -42,36 +45,39 @@ def test_parses_supported_structured_analysis():
     result = make_valid_analysis()
 
     assert result.schema_version == "news-analysis-v1"
-    assert result.direction == NewsDirection.POSITIVE
+    assert result.sentiment == NewsSentiment.POSITIVE
+    assert result.direction_level == NewsDirectionLevel.MEDIUM
     assert result.evidence_spans[0].source_field == EvidenceSourceField.BODY_CLEANED
 
 
-def test_unknown_direction_requires_human_review_and_can_have_no_evidence():
+def test_unknown_classification_requires_human_review_and_can_have_no_evidence():
     result = make_valid_analysis(
-        direction="unknown",
+        sentiment="unknown",
+        direction_level="unknown",
         event_type="unknown",
         evidence_spans=[],
         requires_human_review=True,
     )
 
-    assert result.direction == NewsDirection.UNKNOWN
+    assert result.sentiment == NewsSentiment.UNKNOWN
     assert result.requires_human_review is True
 
 
-def test_unknown_direction_without_review_flag_is_rejected():
-    with pytest.raises(ValidationError, match="unknown direction must be flagged"):
+def test_unknown_classification_without_review_flag_is_rejected():
+    with pytest.raises(ValidationError, match="unknown classification must be flagged"):
         make_valid_analysis(
-            direction="unknown",
+            sentiment="unknown",
+            direction_level="unknown",
             evidence_spans=[],
             requires_human_review=False,
         )
 
 
-def test_mixed_direction_maps_to_unknown_and_requires_review():
-    result = make_valid_analysis(direction="mixed")
+def test_mixed_sentiment_is_preserved_as_a_separate_label():
+    result = make_valid_analysis(sentiment="mixed")
 
-    assert result.direction == NewsDirection.UNKNOWN
-    assert result.requires_human_review is True
+    assert result.sentiment == NewsSentiment.MIXED
+    assert result.direction_level == NewsDirectionLevel.MEDIUM
 
 
 def test_confidence_outside_zero_to_one_is_rejected():
@@ -79,14 +85,15 @@ def test_confidence_outside_zero_to_one_is_rejected():
         make_valid_analysis(
             confidence={
                 "event_type": 1.01,
-                "direction": 0.85,
+                "sentiment": 0.85,
+                "direction_level": 0.75,
                 "relevance": 0.9,
                 "novelty": 0.8,
             }
         )
 
 
-def test_direction_without_evidence_is_rejected():
+def test_classified_sentiment_without_evidence_is_rejected():
     with pytest.raises(ValidationError, match="requires at least one evidence span"):
         make_valid_analysis(evidence_spans=[])
 
