@@ -6,6 +6,7 @@ from app.db.session import SessionLocal
 from app.news.analysis_service import NewsAnalysisService
 from app.news.service import NewsService
 from app.news.sources.registry import create_default_registry
+from app.agents.news_agent.tools import NewsAgentTools
 
 
 async def get_db_session() -> AsyncIterator[AsyncSession]:
@@ -22,3 +23,7 @@ def get_news_service() -> NewsService:
 
 def get_news_analysis_service() -> NewsAnalysisService:
     return NewsAnalysisService()
+
+
+def get_news_agent_tools() -> NewsAgentTools:
+    return NewsAgentTools(get_news_service())
