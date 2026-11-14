@@ -9,6 +9,7 @@ from app.core.dependencies import (
     get_news_agent_tools,
     get_news_analysis_service,
     get_news_analysis_tools,
+    get_news_agent,
     get_news_service,
 )
 from app.news.analysis_service import NewsAnalysisService
@@ -24,9 +25,22 @@ from app.agents.news_agent.schemas import (
 from app.agents.news_agent.tools import NewsAgentTools
 from app.agents.news_agent.analysis_schemas import StructuredAnalysisRequest, StructuredAnalysisResponse
 from app.agents.news_agent.analysis_tools import NewsAnalysisTools
+from app.agents.news_agent.agent import LangChainNewsAgent
+from app.agents.news_agent.agent_schemas import NewsAgentRequest, NewsAgentResponse
 
 
 router = APIRouter(prefix="/news", tags=["news"])
+
+
+@router.post("/ask", response_model=NewsAgentResponse)
+async def ask_news_agent(
+    request: NewsAgentRequest,
+    agent: LangChainNewsAgent = Depends(get_news_agent),
+) -> NewsAgentResponse:
+    try:
+        return await agent.ask(request)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.post("/analyze", response_model=StructuredAnalysisResponse)
