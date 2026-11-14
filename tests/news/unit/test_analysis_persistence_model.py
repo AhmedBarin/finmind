@@ -21,9 +21,14 @@ def test_news_analysis_table_has_versioned_provenance_and_evidence_fields():
         "direction",
         "relevance_score",
         "novelty_score",
+        "source_reliability",
         "classification_confidence",
+        "summary_en",
+        "key_facts",
+        "contradictions",
         "evidence_spans",
         "requires_human_review",
+        "review_status",
     } <= columns
     assert "impact_score" not in columns
     assert "recommendation" not in columns

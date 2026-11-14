@@ -67,11 +67,9 @@ def test_unknown_direction_without_review_flag_is_rejected():
         )
 
 
-def test_mixed_direction_maps_to_unknown_and_requires_review():
-    result = make_valid_analysis(direction="mixed")
-
-    assert result.direction == NewsDirection.UNKNOWN
-    assert result.requires_human_review is True
+def test_mixed_direction_is_rejected_by_the_contract():
+    with pytest.raises(ValidationError):
+        make_valid_analysis(direction="mixed")
 
 
 def test_confidence_outside_zero_to_one_is_rejected():
@@ -86,7 +84,7 @@ def test_confidence_outside_zero_to_one_is_rejected():
         )
 
 
-def test_direction_without_evidence_is_rejected():
+def test_classified_direction_without_evidence_is_rejected():
     with pytest.raises(ValidationError, match="requires at least one evidence span"):
         make_valid_analysis(evidence_spans=[])
 
@@ -94,6 +92,9 @@ def test_direction_without_evidence_is_rejected():
 def test_extra_impact_or_recommendation_fields_are_rejected():
     with pytest.raises(ValidationError):
         make_valid_analysis(impact_score=0.8)
+
+    with pytest.raises(ValidationError):
+        make_valid_analysis(direction_level="high")
 
     with pytest.raises(ValidationError):
         make_valid_analysis(recommendation="buy")

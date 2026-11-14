@@ -1,8 +1,11 @@
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     database_url: str
+    groq_api_key: SecretStr | None = None
+    news_analysis_model: str | None = None
 
     # Investor Agent LLM extraction (optional). When ``ollama_base_url`` is unset
     # the interview uses the deterministic keyword extractor only.

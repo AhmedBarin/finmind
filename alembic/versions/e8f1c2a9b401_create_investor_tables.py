@@ -1,7 +1,7 @@
 """create investor profile, audit log, and learned preference tables
 
 Revision ID: e8f1c2a9b401
-Revises: a4e2b6c9d013
+Revises: e84b2cf61d39
 Create Date: 2026-11-10
 """
 
@@ -13,7 +13,7 @@ from sqlalchemy.dialects import postgresql
 
 
 revision: str = "e8f1c2a9b401"
-down_revision: Union[str, Sequence[str], None] = "a4e2b6c9d013"
+down_revision: Union[str, Sequence[str], None] = "e84b2cf61d39"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

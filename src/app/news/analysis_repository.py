@@ -69,12 +69,19 @@ class NewsAnalysisRepository:
             "direction": analysis.direction.value,
             "relevance_score": analysis.relevance_score,
             "novelty_score": analysis.novelty_score,
+            "source_reliability": None,
             "classification_confidence": analysis.confidence.model_dump(mode="json"),
             "summary_ar": analysis.summary_ar,
+            "summary_en": analysis.summary_en,
+            "key_facts": [],
+            "contradictions": [],
             "evidence_spans": [
                 span.model_dump(mode="json") for span in analysis.evidence_spans
             ],
             "requires_human_review": analysis.requires_human_review,
+            "review_status": (
+                "pending" if analysis.requires_human_review else "not_required"
+            ),
             "limitations": analysis.limitations,
             "analyzed_at": datetime.now(timezone.utc),
         }
