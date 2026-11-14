@@ -306,17 +306,8 @@ class NewsAnalysis(Base):
     __tablename__ = "news_analyses"
     __table_args__ = (
         CheckConstraint(
-            "sentiment IN ('positive', 'neutral', 'negative', 'mixed', 'unknown')",
-            name="ck_news_analyses_sentiment",
-        ),
-        CheckConstraint(
-            "direction_level IN ('low', 'medium', 'high', 'critical', 'unknown')",
-            name="ck_news_analyses_direction_level",
-        ),
-        CheckConstraint(
-            "sentiment_score IS NULL OR "
-            "(sentiment_score >= -1 AND sentiment_score <= 1)",
-            name="ck_news_analyses_sentiment_score_range",
+            "direction IN ('positive', 'negative', 'neutral', 'unknown')",
+            name="ck_news_analyses_direction",
         ),
         CheckConstraint(
             "source_reliability IS NULL OR "
@@ -396,14 +387,7 @@ class NewsAnalysis(Base):
     taxonomy_version: Mapped[str] = mapped_column(String(50), nullable=False)
     pipeline_version: Mapped[str] = mapped_column(String(50), nullable=False)
     event_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    sentiment: Mapped[str] = mapped_column(String(20), nullable=False)
-    sentiment_score: Mapped[Optional[float]] = mapped_column(Float)
-    direction_level: Mapped[str] = mapped_column(
-        String(20),
-        default="unknown",
-        server_default="unknown",
-        nullable=False,
-    )
+    direction: Mapped[str] = mapped_column(String(20), nullable=False)
     relevance_score: Mapped[float] = mapped_column(Float, nullable=False)
     novelty_score: Mapped[float] = mapped_column(Float, nullable=False)
     source_reliability: Mapped[Optional[float]] = mapped_column(Float)

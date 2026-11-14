@@ -3,7 +3,7 @@ from uuid import uuid4
 
 import pytest
 
-from app.news.analysis_schemas import NewsDirectionLevel, NewsSentiment, StructuredNewsAnalysis
+from app.news.analysis_schemas import NewsDirection, StructuredNewsAnalysis
 from app.news.analysis_service import NewsAnalysisService
 from app.companies.models import Company
 
@@ -33,14 +33,12 @@ def make_analysis() -> StructuredNewsAnalysis:
     return StructuredNewsAnalysis.model_validate(
         {
             "event_type": "earnings_results",
-            "sentiment": "positive",
-            "direction_level": "high",
+            "direction": "positive",
             "relevance_score": 0.9,
             "novelty_score": 0.8,
             "confidence": {
                 "event_type": 0.95,
-                "sentiment": 0.85,
-                "direction_level": 0.85,
+                "direction": 0.85,
                 "relevance": 0.9,
                 "novelty": 0.8,
             },
@@ -104,8 +102,7 @@ async def test_analysis_uses_only_permitted_excerpt_and_persists_version_metadat
     assert repository.values["model_name"] == "fake-groq-model"
     assert repository.values["prompt_version"] == "news-analysis-v1"
     assert repository.values["taxonomy_version"] == "egx-events-v1"
-    assert repository.values["analysis"].sentiment == NewsSentiment.UNKNOWN
-    assert repository.values["analysis"].direction_level == NewsDirectionLevel.UNKNOWN
+    assert repository.values["analysis"].direction == NewsDirection.UNKNOWN
     assert repository.values["analysis"].requires_human_review is True
 
 
@@ -167,8 +164,7 @@ async def test_unconfirmed_company_link_cannot_produce_definitive_direction():
     )
 
     assert model.calls[0]["company_context"]["link_status"] == "candidate"
-    assert repository.values["analysis"].sentiment == NewsSentiment.UNKNOWN
-    assert repository.values["analysis"].direction_level == NewsDirectionLevel.UNKNOWN
+    assert repository.values["analysis"].direction == NewsDirection.UNKNOWN
     assert repository.values["analysis"].requires_human_review is True
 
 

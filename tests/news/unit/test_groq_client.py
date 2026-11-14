@@ -12,14 +12,12 @@ from app.news.groq_client import GroqAnalysisClient, GroqAnalysisError
 def valid_analysis_payload() -> dict[str, object]:
     return {
         "event_type": "earnings_results",
-        "sentiment": "positive",
-        "direction_level": "high",
+        "direction": "positive",
         "relevance_score": 0.9,
         "novelty_score": 0.8,
         "confidence": {
             "event_type": 0.95,
-            "sentiment": 0.85,
-            "direction_level": 0.8,
+            "direction": 0.85,
             "relevance": 0.9,
             "novelty": 0.8,
         },
@@ -74,7 +72,7 @@ async def test_groq_client_requests_json_and_parses_the_analysis_contract():
         published_at=None,
     )
 
-    assert result.sentiment == "positive"
+    assert result.direction == "positive"
     assert captured["authorization"] == "Bearer test-secret"
     assert captured["url"] == "https://api.groq.com/openai/v1/chat/completions"
     assert captured["body"]["model"] == "test-model"
@@ -91,7 +89,7 @@ async def test_groq_client_retries_once_after_schema_validation_failure():
     responses = [
         httpx.Response(
             200,
-            json={"choices": [{"message": {"content": '{"sentiment":"sideways"}'}}]},
+            json={"choices": [{"message": {"content": '{"direction":"sideways"}'}}]},
         ),
         httpx.Response(
             200,
@@ -126,7 +124,7 @@ async def test_groq_client_retries_once_after_schema_validation_failure():
         published_at=None,
     )
 
-    assert result.sentiment == "positive"
+    assert result.direction == "positive"
     assert len(requests) == 2
     assert "corrected JSON object" in requests[1]["messages"][-1]["content"]
 

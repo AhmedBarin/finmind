@@ -11,8 +11,7 @@ from app.companies.models import Company
 from app.news.analysis_prompt import PIPELINE_VERSION, PROMPT_VERSION, TAXONOMY_VERSION
 from app.news.analysis_repository import NewsAnalysisRepository
 from app.news.analysis_schemas import (
-    NewsDirectionLevel,
-    NewsSentiment,
+    NewsDirection,
     StructuredNewsAnalysis,
 )
 from app.news.groq_client import GroqAnalysisClient
@@ -140,8 +139,7 @@ class NewsAnalysisService:
             limitations.append(limitation)
         return result.model_copy(
             update={
-                "sentiment": NewsSentiment.UNKNOWN,
-                "direction_level": NewsDirectionLevel.UNKNOWN,
+                "direction": NewsDirection.UNKNOWN,
                 "requires_human_review": True,
                 "limitations": limitations,
             }
