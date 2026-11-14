@@ -12,6 +12,8 @@ from app.core.dependencies import (
     get_news_agent,
     get_news_service,
 )
+from app.core.security import require_news_agent_auth
+from app.api.middleware import check_news_agent_rate_limit, validate_agent_message
 from app.news.analysis_service import NewsAnalysisService
 from app.news.groq_client import GroqAnalysisError
 from app.news.schemas import NewsAnalysisRead, NewsArticleRead
@@ -36,7 +38,10 @@ router = APIRouter(prefix="/news", tags=["news"])
 async def ask_news_agent(
     request: NewsAgentRequest,
     agent: LangChainNewsAgent = Depends(get_news_agent),
+    _client: str = Depends(require_news_agent_auth),
+    _rate_limit: None = Depends(check_news_agent_rate_limit),
 ) -> NewsAgentResponse:
+    request.message = validate_agent_message(request.message)
     try:
         return await agent.ask(request)
     except RuntimeError as exc:

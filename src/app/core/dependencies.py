@@ -11,6 +11,7 @@ from app.agents.news_agent.tools import NewsAgentTools
 from app.agents.news_agent.analysis_tools import NewsAnalysisTools
 from app.agents.news_agent.agent import LangChainNewsAgent
 from app.core.config import settings
+from app.core.security import require_news_agent_auth
 
 
 async def get_db_session() -> AsyncIterator[AsyncSession]:
@@ -57,7 +58,7 @@ def get_news_retrieval_tools() -> object:
 def get_news_agent(
     session: AsyncSession = Depends(get_db_session),
     news_tools: NewsAgentTools = Depends(get_news_agent_tools),
-    retrieval_tools: NewsRetrievalTools = Depends(get_news_retrieval_tools),
+    retrieval_tools: object = Depends(get_news_retrieval_tools),
     analysis_tools: NewsAnalysisTools = Depends(get_news_analysis_tools),
 ) -> LangChainNewsAgent:
     if not settings.news_analysis_model:
