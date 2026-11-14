@@ -8,6 +8,7 @@ from app.core.dependencies import (
     get_db_session,
     get_news_agent_tools,
     get_news_analysis_service,
+    get_news_analysis_tools,
     get_news_service,
 )
 from app.news.analysis_service import NewsAnalysisService
@@ -21,9 +22,20 @@ from app.agents.news_agent.schemas import (
     ToolResponse,
 )
 from app.agents.news_agent.tools import NewsAgentTools
+from app.agents.news_agent.analysis_schemas import StructuredAnalysisRequest, StructuredAnalysisResponse
+from app.agents.news_agent.analysis_tools import NewsAnalysisTools
 
 
 router = APIRouter(prefix="/news", tags=["news"])
+
+
+@router.post("/analyze", response_model=StructuredAnalysisResponse)
+async def structured_news_analysis_tool(
+    request: StructuredAnalysisRequest,
+    session: AsyncSession = Depends(get_db_session),
+    tools: NewsAnalysisTools = Depends(get_news_analysis_tools),
+) -> StructuredAnalysisResponse:
+    return await tools.structured_news_analysis(session, request)
 
 
 @router.post("/search", response_model=ToolResponse)
