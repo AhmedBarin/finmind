@@ -38,6 +38,8 @@ class IndexingResult:
 class VectorIndex(Protocol):
     def upsert(self, *, chunks: list[NewsChunk]) -> None: ...
 
+    def query(self, text: str, *, limit: int = 5) -> list[tuple[NewsChunk, float]]: ...
+
 
 class ChromaNewsVectorIndex:
     """Adapter for a configured Chroma collection.
@@ -58,6 +60,21 @@ class ChromaNewsVectorIndex:
             metadatas=[chunk.metadata for chunk in chunks],
         )
 
+    def query(self, text: str, *, limit: int = 5) -> list[tuple[NewsChunk, float]]:
+        result = self.collection.query(
+            query_texts=[text], n_results=limit,
+            include=["documents", "metadatas", "distances"],
+        )
+        documents = (result.get("documents") or [[]])[0]
+        metadatas = (result.get("metadatas") or [[]])[0]
+        distances = (result.get("distances") or [[]])[0]
+        chunks = []
+        for document, metadata, distance in zip(documents, metadatas, distances):
+            article_id = UUID(str(metadata["article_id"]))
+            chunk_id = sha256(f"{article_id}|{document}".encode("utf-8")).hexdigest()
+            chunks.append((NewsChunk(chunk_id, article_id, document, metadata), float(distance)))
+        return chunks
+
 
 class InMemoryNewsVectorIndex:
     """Deterministic test/development index with Chroma-like upsert semantics."""
@@ -69,7 +86,7 @@ class InMemoryNewsVectorIndex:
         for chunk in chunks:
             self.chunks[chunk.chunk_id] = chunk
 
-    def query(self, text: str, *, limit: int = 5) -> list[NewsChunk]:
+    def query(self, text: str, *, limit: int = 5) -> list[tuple[NewsChunk, float]]:
         terms = {term.casefold() for term in re.findall(r"\w+", text) if term}
         ranked = []
         for chunk in self.chunks.values():
@@ -77,7 +94,10 @@ class InMemoryNewsVectorIndex:
             score = len(terms & words)
             if score:
                 ranked.append((score, chunk))
-        return [chunk for _, chunk in sorted(ranked, key=lambda item: (-item[0], item[1].chunk_id))[:limit]]
+        return [(chunk, float(score)) for score, chunk in sorted(ranked, key=lambda item: (-item[0], item[1].chunk_id))[:limit]]
+
+    def article_chunks(self, article_id: UUID) -> list[NewsChunk]:
+        return [chunk for chunk in self.chunks.values() if chunk.article_id == article_id]
 
 
 class NewsChunker:
@@ -123,6 +143,12 @@ class NewsChunker:
                     "content_rights": policy,
                     "content_hash": article.content_hash,
                     "pipeline_version": PIPELINE_VERSION,
+                    "document_type": getattr(article, "document_type", None),
+                    "document_title": getattr(article, "document_title", article.title_original),
+                    "fiscal_year": getattr(article, "fiscal_year", None),
+                    "page": getattr(article, "page", None),
+                    "section": getattr(article, "section", None),
+                    "company_ids": [str(value) for value in getattr(article, "company_ids", ())],
                 }
                 chunks.append(NewsChunk(chunk_id=chunk_id, article_id=article.id, text=piece, metadata=metadata))
         return chunks
