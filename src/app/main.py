@@ -13,6 +13,7 @@ from app.investor.llm_extraction import build_default_extractor
 from app.investor.router import router as investor_router
 from app.monitoring.routers import monitoring_router
 from app.news.router import router as news_router
+from app.recommendation.router import router as recommendation_router
 from app.monitoring.scheduler import (
     start_monitoring_scheduler,
     stop_monitoring_scheduler,
@@ -60,6 +61,7 @@ app.include_router(
 )
 app.include_router(technical_router)
 app.include_router(investor_router)
+app.include_router(recommendation_router)
 
 
 _INVESTOR_CHAT_PAGE = Path(__file__).parent / "investor" / "static" / "chat.html"

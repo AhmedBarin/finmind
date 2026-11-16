@@ -17,6 +17,7 @@ from app.recommendation.config import RECOMMENDATION_CONFIG_VERSION
 from app.recommendation.decision import DecisionEvaluation, FamilyGate, evaluate_decision
 from app.recommendation.models import RecommendationLog
 from app.recommendation.repository import (
+    get_recommendation_by_id,
     get_recommendation_history,
     save_recommendation_log,
 )
@@ -165,6 +166,21 @@ def test_confidence_is_low_when_required_inputs_are_missing() -> None:
     assert calculate_confidence(inputs, outcome) == ConfidenceLevel.LOW
 
 
+def test_stale_latest_snapshot_status_is_explained_in_result() -> None:
+    inputs = _inputs().model_copy(
+        update={"snapshot": None, "snapshot_status": "stale"}
+    )
+
+    result = build_recommendation_result(inputs, evaluate_decision(inputs))
+
+    assert result.decision == RecommendationDecision.NO_RECOMMENDATION
+    assert result.data_quality.price_status == "stale"
+    assert "stale_snapshot" in result.reasons
+    assert result.what_would_change_it == [
+        "The latest technical snapshot is stale; a fresh snapshot is required."
+    ]
+
+
 def test_excluded_results_have_low_recommendation_confidence() -> None:
     inputs = _inputs()
     outcome = _evaluation(
@@ -262,6 +278,31 @@ async def test_history_is_user_scoped_and_normalizes_ticker() -> None:
     assert statement_seen is not None
     assert "recommendation_logs.user_id" in str(statement_seen)
     assert "recommendation_logs.ticker" in str(statement_seen)
+
+
+@pytest.mark.asyncio
+async def test_get_recommendation_by_id_scopes_by_user_and_id() -> None:
+    user_id = uuid4()
+    recommendation_id = uuid4()
+    statement_seen = None
+
+    class FakeSession:
+        async def scalar(self, statement):
+            nonlocal statement_seen
+            statement_seen = statement
+            return None
+
+    result = await get_recommendation_by_id(
+        FakeSession(),
+        user_id=user_id,
+        recommendation_id=recommendation_id,
+    )
+
+    assert result is None
+    assert statement_seen is not None
+    rendered = str(statement_seen)
+    assert "recommendation_logs.user_id" in rendered
+    assert "recommendation_logs.id" in rendered
 
 
 @pytest.mark.asyncio

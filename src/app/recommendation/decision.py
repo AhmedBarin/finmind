@@ -43,7 +43,12 @@ def evaluate_decision(
     if profile is None:
         return _no_recommendation("active_profile_missing")
     if snapshot is None:
-        return _no_recommendation("valid_snapshot_missing")
+        missing_snapshot_reason = {
+            "stale": "stale_snapshot",
+            "insufficient_history": "insufficient_history",
+            "flagged": "flagged_snapshot",
+        }.get(inputs.snapshot_status, "valid_snapshot_missing")
+        return _no_recommendation(missing_snapshot_reason)
 
     indicators = snapshot.indicators
     family_scores = snapshot.scores.get("family_scores", {})

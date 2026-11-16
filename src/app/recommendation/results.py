@@ -31,6 +31,7 @@ _INDICATOR_FIELDS = (
     "volume_ratio",
     "support",
     "resistance",
+    "liquidity_rank_pct",
 )
 
 _REASON_TEXT = {
@@ -44,6 +45,9 @@ _REASON_TEXT = {
     "volatility_percentile_unavailable": "A valid volatility percentile is required.",
     "valid_snapshot_missing": "A valid technical snapshot is required.",
     "active_profile_missing": "A confirmed active investor profile is required.",
+    "stale_snapshot": "The latest technical snapshot is stale; a fresh snapshot is required.",
+    "insufficient_history": "The latest snapshot has insufficient price history.",
+    "flagged_snapshot": "The latest technical snapshot is flagged and cannot be used.",
     "sector_unavailable": "Company sector data is required to apply your sector preferences.",
     "liquidity_below_profile_minimum": "The stock does not meet your profile's liquidity minimum.",
     "ticker_excluded": "The ticker is excluded by your investor profile.",
@@ -134,7 +138,9 @@ def build_recommendation_result(
         ],
         data_quality=RecommendationDataQuality(
             price_status=(
-                snapshot.data_quality_status if snapshot is not None else "unavailable"
+                snapshot.data_quality_status
+                if snapshot is not None
+                else inputs.snapshot_status or "unavailable"
             ),
             last_price_date=snapshot.date if snapshot is not None else None,
         ),
