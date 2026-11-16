@@ -17,6 +17,8 @@ from app.market_data.fetcher import (
 )
 from app.market_data.ingestion import IngestionReport, ingest_price_history
 from app.market_data.repository import get_latest_stock_price
+from app.technical_analysis.config import EGX30_TICKERS
+from app.technical_analysis.liquidity_ranker import rank_egx30_snapshots
 from app.technical_analysis.repository import get_snapshot_history
 from app.technical_analysis.snapshot_service import calculate_and_persist_snapshot
 
@@ -55,6 +57,7 @@ async def run_market_data_job(
     normalized_tickers = tuple(dict.fromkeys(t.strip().upper() for t in tickers))
     if any(not ticker for ticker in normalized_tickers):
         raise ValueError("tickers must not contain empty values")
+    snapshot_dates_to_rank: set[date] = set()
 
     for ticker in normalized_tickers:
         try:
@@ -64,10 +67,12 @@ async def run_market_data_job(
             async with session_factory() as session, session.begin():
                 report = await ingest_price_history(session, history)
                 if report.changed_dates:
-                    await _recalculate_affected_snapshots(
-                        session,
-                        ticker_key,
-                        min(report.changed_dates),
+                    snapshot_dates_to_rank.update(
+                        await _recalculate_affected_snapshots(
+                            session,
+                            ticker_key,
+                            min(report.changed_dates),
+                        )
                     )
             results.append(TickerJobResult(ticker_key, report))
             logger.info(
@@ -81,6 +86,24 @@ async def run_market_data_job(
         except Exception as exc:
             logger.exception("Market-data ingestion failed for %s", ticker)
             results.append(TickerJobResult(ticker, None, str(exc)))
+
+    # Rank only after all per-ticker snapshots are calculated, and only if the
+    # job received the complete configured EGX30 universe.
+    if set(EGX30_TICKERS).issubset(normalized_tickers) and snapshot_dates_to_rank:
+        for as_of_date in sorted(snapshot_dates_to_rank):
+            try:
+                async with session_factory() as session, session.begin():
+                    rank_report = await rank_egx30_snapshots(session, as_of_date)
+                logger.info(
+                    "EGX30 liquidity ranks date=%s ranked=%d unavailable=%d",
+                    as_of_date,
+                    len(rank_report.ranked_tickers),
+                    len(rank_report.unavailable_tickers),
+                )
+            except Exception:
+                logger.exception(
+                    "EGX30 liquidity ranking failed for %s", as_of_date
+                )
 
     return tuple(results)
 
@@ -119,10 +142,10 @@ async def _recalculate_affected_snapshots(
     session: AsyncSession,
     ticker: str,
     earliest_changed_date: date,
-) -> None:
+) -> tuple[date, ...]:
     latest_price = await get_latest_stock_price(session, ticker)
     if latest_price is None:
-        return
+        return ()
 
     existing_snapshots = await get_snapshot_history(
         session,
@@ -139,3 +162,4 @@ async def _recalculate_affected_snapshots(
             ticker,
             snapshot_date,
         )
+    return tuple(sorted(snapshot_dates))
