@@ -118,6 +118,7 @@ class RecommendationResult(BaseModel):
     snapshot_id: UUID | None = None
     config_version: str
     decision: RecommendationDecision
+    reasons: list[str] = Field(default_factory=list)
     watch_reasons: list[str] = Field(default_factory=list)
     confidence: ConfidenceLevel
     setup_score: float | None = Field(default=None, ge=0, le=100)
