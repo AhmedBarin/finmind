@@ -76,6 +76,22 @@ class ChromaNewsVectorIndex:
         return chunks
 
 
+class PersistentChromaNewsVectorIndex(ChromaNewsVectorIndex):
+    """Persistent Chroma adapter shared by all requests in a process."""
+
+    def __init__(self, *, path: str, collection_name: str = "finmind_news") -> None:
+        try:
+            import chromadb
+        except ImportError as exc:
+            raise RuntimeError(
+                "ChromaDB is not installed; configure the vector store before enabling retrieval tools."
+            ) from exc
+        client = chromadb.PersistentClient(path=path)
+        super().__init__(
+            collection=client.get_or_create_collection(name=collection_name)
+        )
+
+
 class InMemoryNewsVectorIndex:
     """Deterministic test/development index with Chroma-like upsert semantics."""
 
