@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import (
     get_db_session,
+    get_news_agent_tools,
     get_news_analysis_service,
     get_news_service,
 )
@@ -13,9 +14,54 @@ from app.news.analysis_service import NewsAnalysisService
 from app.news.groq_client import GroqAnalysisError
 from app.news.schemas import NewsAnalysisRead, NewsArticleRead
 from app.news.service import NewsService
+from app.agents.news_agent.schemas import (
+    CompanyNewsRequest,
+    RecentNewsRequest,
+    SearchNewsRequest,
+    ToolResponse,
+)
+from app.agents.news_agent.tools import NewsAgentTools
 
 
 router = APIRouter(prefix="/news", tags=["news"])
+
+
+@router.post("/search", response_model=ToolResponse)
+async def search_news_tool(
+    request: SearchNewsRequest,
+    session: AsyncSession = Depends(get_db_session),
+    tools: NewsAgentTools = Depends(get_news_agent_tools),
+) -> ToolResponse:
+    try:
+        return await tools.search_news(session, request)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/recent", response_model=ToolResponse)
+async def recent_news_tool(
+    request: RecentNewsRequest,
+    session: AsyncSession = Depends(get_db_session),
+    tools: NewsAgentTools = Depends(get_news_agent_tools),
+) -> ToolResponse:
+    try:
+        return await tools.get_recent_news(session, request)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/companies/{ticker}/news", response_model=ToolResponse)
+async def company_news_tool(
+    ticker: str,
+    request: CompanyNewsRequest,
+    session: AsyncSession = Depends(get_db_session),
+    tools: NewsAgentTools = Depends(get_news_agent_tools),
+) -> ToolResponse:
+    request.ticker = ticker
+    try:
+        return await tools.get_company_news(session, request)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/articles", response_model=list[NewsArticleRead])
