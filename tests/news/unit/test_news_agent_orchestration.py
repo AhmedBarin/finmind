@@ -1,4 +1,6 @@
 import inspect
+import sys
+from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
@@ -30,3 +32,25 @@ def test_missing_langchain_is_reported_at_tool_construction_boundary():
     # The import is intentionally lazy; deployment receives a clear error if
     # dependencies were not installed rather than breaking unrelated API code.
     assert callable(build_news_tools)
+
+
+def test_dependency_builds_real_persistent_retrieval_tools(monkeypatch):
+    """The agent dependency must not silently fall back when Chroma is available."""
+    class FakeCollection:
+        pass
+
+    class FakeClient:
+        def __init__(self, *, path):
+            self.path = path
+
+        def get_or_create_collection(self, *, name):
+            return FakeCollection()
+
+    monkeypatch.setitem(sys.modules, "chromadb", SimpleNamespace(PersistentClient=FakeClient))
+
+    from app.agents.news_agent.retrieval_tools import NewsRetrievalTools
+    from app.core import dependencies
+
+    tools = dependencies.get_news_retrieval_tools()
+    assert isinstance(tools, NewsRetrievalTools)
+    assert isinstance(tools.index.collection, FakeCollection)
