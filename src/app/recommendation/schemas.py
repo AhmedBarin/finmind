@@ -49,6 +49,8 @@ class RecommendationInputs(BaseModel):
     ticker: str = Field(min_length=1, max_length=32)
     profile: InvestorProfilePayload | None
     snapshot: TechnicalSnapshotRead | None
+    sector: str | None = None
+    liquidity_rank_pct: float | None = Field(default=None, ge=0, le=100)
 
     @field_validator("ticker")
     @classmethod
