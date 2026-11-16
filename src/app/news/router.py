@@ -8,6 +8,11 @@ from app.core.dependencies import (
     get_db_session,
     get_news_agent_tools,
     get_news_analysis_service,
+<<<<<<< HEAD
+=======
+    get_news_analysis_tools,
+    get_news_agent,
+>>>>>>> 1c0fb50 (Add LangChain news agent orchestration)
     get_news_service,
 )
 from app.news.analysis_service import NewsAnalysisService
@@ -21,11 +26,41 @@ from app.agents.news_agent.schemas import (
     ToolResponse,
 )
 from app.agents.news_agent.tools import NewsAgentTools
+<<<<<<< HEAD
+=======
+from app.agents.news_agent.analysis_schemas import StructuredAnalysisRequest, StructuredAnalysisResponse
+from app.agents.news_agent.analysis_tools import NewsAnalysisTools
+from app.agents.news_agent.agent import LangChainNewsAgent
+from app.agents.news_agent.agent_schemas import NewsAgentRequest, NewsAgentResponse
+>>>>>>> 1c0fb50 (Add LangChain news agent orchestration)
 
 
 router = APIRouter(prefix="/news", tags=["news"])
 
 
+<<<<<<< HEAD
+=======
+@router.post("/ask", response_model=NewsAgentResponse)
+async def ask_news_agent(
+    request: NewsAgentRequest,
+    agent: LangChainNewsAgent = Depends(get_news_agent),
+) -> NewsAgentResponse:
+    try:
+        return await agent.ask(request)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post("/analyze", response_model=StructuredAnalysisResponse)
+async def structured_news_analysis_tool(
+    request: StructuredAnalysisRequest,
+    session: AsyncSession = Depends(get_db_session),
+    tools: NewsAnalysisTools = Depends(get_news_analysis_tools),
+) -> StructuredAnalysisResponse:
+    return await tools.structured_news_analysis(session, request)
+
+
+>>>>>>> 1c0fb50 (Add LangChain news agent orchestration)
 @router.post("/search", response_model=ToolResponse)
 async def search_news_tool(
     request: SearchNewsRequest,
