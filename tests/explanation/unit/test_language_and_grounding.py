@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-from app.explanation.stock_qa.grounding import (
+from app.explanation.grounding import (
     collect_numbers,
     extract_numbers,
     is_grounded,
     ungrounded_numbers,
 )
-from app.explanation.stock_qa.language import (
+from app.explanation.language import (
     asks_for_recommendation,
     find_recommendation_language,
     split_question,
@@ -97,3 +97,13 @@ def test_half_way_values_accept_either_rounding():
 def test_derived_numbers_are_ungrounded():
     # 3.5% is a change the model computed itself, not a stored value.
     assert ungrounded_numbers("ارتفع السهم 3.5% إلى 82.15", {82.15}) == ["3.5"]
+
+
+def test_identifiers_do_not_ground_numbers():
+    numbers = collect_numbers({"id": "3f8a1c2e-0b4d-4e6f-8a9b-1c2d3e4f5a6b", "hash": "a" * 20 + "8" * 44})
+    assert numbers == set()
+
+
+def test_timestamps_ground_only_date_hour_and_minute():
+    numbers = collect_numbers(["2026-11-16T14:30:07.123456+00:00", "2026-11-16 09:05Z"])
+    assert numbers == {2026.0, 11.0, 16.0, 14.0, 30.0, 9.0, 5.0}

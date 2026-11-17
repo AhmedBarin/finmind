@@ -48,13 +48,3 @@ def build_messages(
         {"role": "user", "content": json.dumps(payload, ensure_ascii=False, default=str)},
     ]
 
-
-def retry_message(issues: list[str]) -> dict[str, str]:
-    return {
-        "role": "user",
-        "content": (
-            "Your previous answer was rejected for these reasons:\n- "
-            + "\n- ".join(issues)
-            + "\nReturn a corrected JSON object that follows every rule."
-        ),
-    }

@@ -9,9 +9,9 @@ from typing import Any
 
 import pytest
 
-from app.explanation.stock_qa.generator import StockQAGenerationError
+from app.explanation.llm import ExplanationLLMError
 from app.explanation.stock_qa.schemas import ToolResult
-from app.explanation.stock_qa.tools import snapshot_summary
+from app.explanation.snapshots import snapshot_summary
 
 TODAY = date(2026, 11, 17)
 DATA_DATE = date(2026, 11, 16)
@@ -108,4 +108,4 @@ GOOD_FACTS = [{"ticker": "COMI.CA", "field": "rsi", "value": 56.2347, "data_date
 
 @pytest.fixture
 def generation_error() -> Exception:
-    return StockQAGenerationError("boom")
+    return ExplanationLLMError("boom")

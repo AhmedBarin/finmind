@@ -16,7 +16,7 @@ class ExplanationSettings(BaseSettings):
     )
 
     # Groq model for Arabic generation. Falls back to NEWS_ANALYSIS_MODEL when
-    # unset; with no model or key configured, Stock Q&A uses its safe template.
+    # unset; with no model or key configured, explanations use safe templates.
     llm_model: str | None = None
     llm_timeout_seconds: float = Field(default=30.0, gt=0)
 
@@ -24,7 +24,7 @@ class ExplanationSettings(BaseSettings):
     # closes Friday and Saturday, so a small buffer covers normal weekends.
     max_snapshot_age_days: int = Field(default=4, ge=0)
 
-    qa_rate_limit_per_minute: int = Field(default=20, ge=1)
+    rate_limit_per_minute: int = Field(default=20, ge=1)
 
 
 @lru_cache

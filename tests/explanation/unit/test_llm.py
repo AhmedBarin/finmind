@@ -6,11 +6,11 @@ from pydantic import SecretStr
 
 from app.core.config import Settings
 from app.explanation.config import ExplanationSettings
-from app.explanation.stock_qa.generator import GroqStockQAGenerator, StockQAGenerationError
+from app.explanation.llm import GroqExplanationLLM, ExplanationLLMError
 
 
-def _generator(handler) -> GroqStockQAGenerator:
-    return GroqStockQAGenerator(
+def _generator(handler) -> GroqExplanationLLM:
+    return GroqExplanationLLM(
         api_key=SecretStr("k"), model="m", transport=httpx.MockTransport(handler)
     )
 
@@ -38,20 +38,20 @@ async def test_complete_returns_message_content():
     ],
 )
 async def test_complete_raises_safe_error(response):
-    with pytest.raises(StockQAGenerationError):
+    with pytest.raises(ExplanationLLMError):
         await _generator(lambda request: response).complete([])
 
 
 def test_from_settings_needs_key_and_model():
     no_model = ExplanationSettings(_env_file=None)
-    assert GroqStockQAGenerator.from_settings(_settings(), no_model) is None
-    assert GroqStockQAGenerator.from_settings(_settings(groq_api_key="k"), no_model) is None
+    assert GroqExplanationLLM.from_settings(_settings(), no_model) is None
+    assert GroqExplanationLLM.from_settings(_settings(groq_api_key="k"), no_model) is None
 
-    fallback = GroqStockQAGenerator.from_settings(
+    fallback = GroqExplanationLLM.from_settings(
         _settings(groq_api_key="k", news_analysis_model="news-model"), no_model
     )
     assert fallback is not None and fallback.model_name == "news-model"
 
     explicit = ExplanationSettings(_env_file=None, llm_model="qa-model")
-    chosen = GroqStockQAGenerator.from_settings(_settings(groq_api_key="k"), explicit)
+    chosen = GroqExplanationLLM.from_settings(_settings(groq_api_key="k"), explicit)
     assert chosen is not None and chosen.model_name == "qa-model"

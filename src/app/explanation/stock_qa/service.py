@@ -19,22 +19,20 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any
 
-from pydantic import ValidationError
-
-from app.explanation.stock_qa.generator import StockQAGenerationError, StockQAGenerator
-from app.explanation.stock_qa.glossary import terms_in_question
-from app.explanation.stock_qa.grounding import (
+from app.explanation.generation import LLMOutcome, dedupe, generate_validated, text_issues
+from app.explanation.grounding import (
     INDICATOR_NAME_NUMBERS,
     collect_numbers,
     is_grounded,
     normalize_digits,
-    ungrounded_numbers,
+    number_text,
 )
-from app.explanation.stock_qa.language import find_recommendation_language, split_question
-from app.explanation.stock_qa.prompt import PROMPT_VERSION, build_messages, retry_message
+from app.explanation.language import split_question
+from app.explanation.llm import ExplanationLLM
+from app.explanation.stock_qa.glossary import terms_in_question
+from app.explanation.stock_qa.prompt import PROMPT_VERSION, build_messages
 from app.explanation.stock_qa.schemas import (
-    GenerationPath,
-    StockQADraft,
+        StockQADraft,
     StockQAFact,
     StockQARequest,
     StockQAResponse,
@@ -101,18 +99,10 @@ class _Context:
         return min(dates) if dates else None
 
 
-def _number_text(value: float) -> str:
-    return format(abs(value), "f").rstrip("0").rstrip(".") or "0"
-
-
-def _dedupe(items: list[str]) -> list[str]:
-    return list(dict.fromkeys(item for item in items if item))
-
-
 class StockQAService:
     def __init__(
         self,
-        generator: StockQAGenerator | None,
+        generator: ExplanationLLM | None,
         *,
         max_snapshot_age_days: int = 4,
         today: Callable[[], date] = date.today,
@@ -171,7 +161,7 @@ class StockQAService:
                 **base,
                 answer_ar=draft.answer_ar,
                 facts=draft.facts,
-                limitations_ar=_dedupe([*limitations, *draft.limitations_ar]),
+                limitations_ar=dedupe([*limitations, *draft.limitations_ar]),
                 generation=path,
             )
         )
@@ -254,7 +244,7 @@ class StockQAService:
 
     # ── Generation and validation ─────────────────────────────────────
 
-    async def _generate(self, ctx: _Context) -> tuple[StockQADraft | None, GenerationPath]:
+    async def _generate(self, ctx: _Context) -> tuple[StockQADraft | None, LLMOutcome]:
         assert self._generator is not None
         messages = build_messages(
             question=ctx.question,
@@ -262,54 +252,29 @@ class StockQAService:
             tool_results=[r.model_dump(mode="json") for r in ctx.results],
             freshness=[f.model_dump(mode="json") for f in ctx.freshness],
         )
-        for attempt in range(2):
-            try:
-                raw = await self._generator.complete(messages)
-            except StockQAGenerationError as exc:
-                logger.warning("stock_qa generation failed: %s", exc)
-                return None, "fallback"
-            try:
-                draft = StockQADraft.model_validate_json(raw)
-            except ValidationError as exc:
-                issues = [
-                    "Output did not match output_schema: "
-                    + "; ".join(
-                        f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}"
-                        for e in exc.errors()[:5]
-                    )
-                ]
-            else:
-                issues = self.validate_draft(draft, ctx)
-            if not issues:
-                return draft, "llm" if attempt == 0 else "llm_retry"
-            logger.info("stock_qa draft rejected (attempt %d): %d issue(s)", attempt + 1, len(issues))
-            messages = [*messages, {"role": "assistant", "content": raw}, retry_message(issues)]
-        return None, "fallback"
+        return await generate_validated(
+            self._generator,
+            messages,
+            StockQADraft,
+            lambda draft: self.validate_draft(draft, ctx),
+            label="stock_qa",
+        )
 
     def validate_draft(self, draft: StockQADraft, ctx: _Context) -> list[str]:
-        issues: list[str] = []
-
-        def check_text(text: str, where: str) -> None:
-            hits = find_recommendation_language(text)
-            if hits:
-                issues.append(f"{where} contains recommendation language: {', '.join(hits)}")
-            bad = ungrounded_numbers(text, ctx.allowed_numbers)
-            if bad:
-                issues.append(f"{where} has numbers not found in tool_results: {', '.join(bad)}")
-
-        check_text(draft.answer_ar, "answer_ar")
+        allowed = ctx.allowed_numbers
+        issues = text_issues(draft.answer_ar, "answer_ar", allowed)
         for note in draft.limitations_ar:
-            check_text(note, "limitations_ar")
+            issues += text_issues(note, "limitations_ar", allowed)
 
         for fact in draft.facts:
             ticker = fact.ticker.strip().upper()
             if ticker not in ctx.tickers:
                 issues.append(f"facts cites ticker {fact.ticker} that was not requested")
                 continue
-            check_text(fact.field, "facts.field")
+            issues += text_issues(fact.field, "facts.field", allowed)
             if isinstance(fact.value, str):
-                check_text(fact.value, "facts.value")
-            elif not is_grounded(_number_text(fact.value), ctx.allowed_numbers):
+                issues += text_issues(fact.value, "facts.value", allowed)
+            elif not is_grounded(number_text(fact.value), allowed):
                 issues.append(f"facts value {fact.value} for {ticker}.{fact.field} is not in tool_results")
             if fact.data_date and fact.data_date not in ctx.known_dates.get(ticker, set()):
                 issues.append(f"facts data_date {fact.data_date} for {ticker} is not in tool_results")
@@ -317,7 +282,7 @@ class StockQAService:
         answer = normalize_digits(draft.answer_ar)
         if not any(d.isoformat() in answer for d in ctx.snapshot_dates):
             issues.append("answer_ar must state the data date in the form YYYY-MM-DD")
-        return _dedupe(issues)
+        return dedupe(issues)
 
     # ── Safe template ─────────────────────────────────────────────────
 
@@ -350,7 +315,7 @@ class StockQAService:
             **base,
             answer_ar="\n".join(lines),
             facts=facts,
-            limitations_ar=_dedupe(limitations),
+            limitations_ar=dedupe(limitations),
             generation="fallback",
         )
 

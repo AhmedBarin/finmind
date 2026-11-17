@@ -1,4 +1,4 @@
-"""LLM access for Stock Q&A: a minimal chat interface plus a Groq implementation."""
+"""LLM access for the Explanation Agent: a minimal chat interface plus Groq."""
 
 from __future__ import annotations
 
@@ -12,11 +12,11 @@ from app.explanation.config import ExplanationSettings, get_explanation_settings
 from app.news.groq_client import GROQ_CHAT_COMPLETIONS_URL
 
 
-class StockQAGenerationError(RuntimeError):
+class ExplanationLLMError(RuntimeError):
     """The LLM could not be reached or returned no content. Safe to log."""
 
 
-class StockQAGenerator(Protocol):
+class ExplanationLLM(Protocol):
     model_name: str
 
     async def complete(self, messages: list[dict[str, str]]) -> str:
@@ -24,7 +24,7 @@ class StockQAGenerator(Protocol):
         ...
 
 
-class GroqStockQAGenerator:
+class GroqExplanationLLM:
     def __init__(
         self,
         *,
@@ -43,7 +43,7 @@ class GroqStockQAGenerator:
         cls,
         config: Settings = app_settings,
         explanation: ExplanationSettings | None = None,
-    ) -> GroqStockQAGenerator | None:
+    ) -> GroqExplanationLLM | None:
         """Build from settings, or return ``None`` when Groq is not configured."""
         explanation = explanation or get_explanation_settings()
         model = (explanation.llm_model or config.news_analysis_model or "").strip()
@@ -72,18 +72,18 @@ class GroqStockQAGenerator:
                 )
                 response.raise_for_status()
         except httpx.HTTPStatusError as exc:
-            raise StockQAGenerationError(
+            raise ExplanationLLMError(
                 f"Groq returned HTTP {exc.response.status_code}"
             ) from None
         except httpx.TimeoutException:
-            raise StockQAGenerationError("Groq request timed out") from None
+            raise ExplanationLLMError("Groq request timed out") from None
         except httpx.RequestError:
-            raise StockQAGenerationError("Could not reach the Groq API") from None
+            raise ExplanationLLMError("Could not reach the Groq API") from None
 
         try:
             content = response.json()["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError, ValueError):
-            raise StockQAGenerationError("Groq returned an unexpected payload") from None
+            raise ExplanationLLMError("Groq returned an unexpected payload") from None
         if not isinstance(content, str) or not content.strip():
-            raise StockQAGenerationError("Groq returned an empty message")
+            raise ExplanationLLMError("Groq returned an empty message")
         return content

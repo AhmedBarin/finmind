@@ -8,11 +8,11 @@ indicator, a change, or a score.
 from __future__ import annotations
 
 from datetime import date, timedelta
-from decimal import Decimal
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.explanation.snapshots import json_value, snapshot_summary
 from app.explanation.stock_qa import glossary
 from app.explanation.stock_qa.schemas import PricePeriod, ToolResult
 from app.market_data.repository import get_latest_stock_price, get_stock_price_history
@@ -22,34 +22,6 @@ from app.technical_analysis.models import TechnicalSnapshot
 PERIOD_DAYS: dict[str, int] = {"1w": 7, "1m": 31, "3m": 92, "6m": 183, "1y": 366}
 SNAPSHOT_HISTORY_LIMIT = 60
 PRICE_HISTORY_LIMIT = 260
-
-_SNAPSHOT_FIELDS = (
-    "date",
-    "data_quality_status",
-    "rsi",
-    "sma_20",
-    "sma_50",
-    "atr",
-    "setup_score",
-    "regime",
-    "risk_label",
-)
-
-
-def _json_value(value: Any) -> Any:
-    if isinstance(value, Decimal):
-        return float(value)
-    if isinstance(value, date):
-        return value.isoformat()
-    return value
-
-
-def snapshot_summary(snapshot: TechnicalSnapshot) -> dict[str, Any]:
-    """Stored snapshot fields the agent may cite (raw input window excluded)."""
-    data = {name: _json_value(getattr(snapshot, name)) for name in _SNAPSHOT_FIELDS}
-    data["ticker"] = snapshot.ticker
-    data["quality_flags"] = list(snapshot.quality_flags or [])
-    return data
 
 
 def _snapshot_detail(snapshot: TechnicalSnapshot) -> dict[str, Any]:
@@ -77,7 +49,7 @@ class StockQATools:
                 tool="get_technical_snapshot",
                 ticker=ticker,
                 found=False,
-                data={"requested_date": _json_value(on)},
+                data={"requested_date": json_value(on)},
             )
         return ToolResult(
             tool="get_technical_snapshot",
@@ -102,8 +74,8 @@ class StockQATools:
             data_date=snapshots[0].date if snapshots else None,
             found=bool(snapshots),
             data={
-                "from": _json_value(start),
-                "to": _json_value(end),
+                "from": json_value(start),
+                "to": json_value(end),
                 "snapshots": [snapshot_summary(s) for s in snapshots],
             },
         )
@@ -132,8 +104,8 @@ class StockQATools:
         prices = [
             {
                 "date": row.date.isoformat(),
-                "close": _json_value(row.raw_close),
-                "adj_close": _json_value(row.adj_close),
+                "close": json_value(row.raw_close),
+                "adj_close": json_value(row.adj_close),
                 "volume": row.volume,
             }
             for row in rows
@@ -158,7 +130,7 @@ class StockQATools:
         return ToolResult(
             tool="compare_snapshots",
             found=bool(rows),
-            data={"requested_date": _json_value(on), "snapshots": rows, "missing": missing},
+            data={"requested_date": json_value(on), "snapshots": rows, "missing": missing},
         )
 
     async def get_indicator_glossary(self, name: str) -> ToolResult:
