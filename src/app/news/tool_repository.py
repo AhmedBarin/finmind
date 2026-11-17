@@ -41,6 +41,7 @@ class NewsToolRepository:
             .where(NewsAnalysis.article_id == NewsArticle.id)
             .order_by(NewsAnalysis.analyzed_at.desc(), NewsAnalysis.created_at.desc())
             .limit(1)
+            .correlate(NewsArticle)
             .scalar_subquery()
         )
         statement = (
@@ -70,7 +71,26 @@ class NewsToolRepository:
             statement = statement.where(NewsSource.source_type.in_(source_types))
         if language and language != "mixed":
             statement = statement.where(NewsArticle.language == language)
-        statement = statement.order_by(NewsArticle.published_at.desc()).limit(limit * 5)
+        # First choose distinct article IDs. A single article can have many
+        # company links, so limiting the joined rows directly can return fewer
+        # than ``limit`` distinct articles.
+        article_ids_statement = (
+            statement.with_only_columns(
+                NewsArticle.id,
+                NewsArticle.published_at,
+            )
+            .group_by(NewsArticle.id, NewsArticle.published_at)
+            .order_by(NewsArticle.published_at.desc())
+            .limit(limit)
+        )
+        article_ids = list((await session.scalars(article_ids_statement)).all())
+        if not article_ids:
+            return []
+
+        statement = (
+            statement.where(NewsArticle.id.in_(article_ids))
+            .order_by(NewsArticle.published_at.desc())
+        )
         rows = (await session.execute(statement)).all()
         grouped: dict[UUID, ToolArticleRow] = {}
         for article, source, link, company, analysis in rows:
