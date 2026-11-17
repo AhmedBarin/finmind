@@ -57,3 +57,17 @@ async def get_recommendation_history(
     ).limit(limit)
     result = await session.scalars(statement)
     return list(result.all())
+
+
+async def get_recommendation_by_id(
+    session: AsyncSession,
+    *,
+    user_id: UUID,
+    recommendation_id: UUID,
+) -> RecommendationLog | None:
+    """Read an audit row only when it belongs to the requesting user."""
+    statement = select(RecommendationLog).where(
+        RecommendationLog.id == recommendation_id,
+        RecommendationLog.user_id == user_id,
+    )
+    return await session.scalar(statement)

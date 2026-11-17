@@ -123,6 +123,17 @@ def test_missing_profile_or_snapshot_produces_no_recommendation() -> None:
     assert snapshot_outcome.reasons == ("valid_snapshot_missing",)
 
 
+def test_newest_stale_snapshot_produces_no_recommendation_with_stale_reason() -> None:
+    inputs = _inputs().model_copy(
+        update={"snapshot": None, "snapshot_status": "stale"}
+    )
+
+    outcome = evaluate_decision(inputs)
+
+    assert outcome.decision == RecommendationDecision.NO_RECOMMENDATION
+    assert outcome.reasons == ("stale_snapshot",)
+
+
 def test_horizon_adjustments_change_family_minimums() -> None:
     short = family_minimums(RiskProfile.MODERATE, InvestmentHorizon.SHORT)
     long = family_minimums(RiskProfile.MODERATE, InvestmentHorizon.LONG)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from enum import StrEnum
 from uuid import UUID
 
@@ -41,7 +41,7 @@ class RecommendationEvaluateRequest(BaseModel):
 
 
 class RecommendationInputs(BaseModel):
-    """Read-only profile and latest valid snapshot used by a decision."""
+    """Read-only profile and newest valid snapshot used by a decision."""
 
     model_config = ConfigDict(arbitrary_types_allowed=False)
 
@@ -49,6 +49,7 @@ class RecommendationInputs(BaseModel):
     ticker: str = Field(min_length=1, max_length=32)
     profile: InvestorProfilePayload | None
     snapshot: TechnicalSnapshotRead | None
+    snapshot_status: str | None = None
     sector: str | None = None
     liquidity_rank_pct: float | None = Field(default=None, ge=0, le=100)
 
@@ -72,6 +73,8 @@ class RecommendationInputs(BaseModel):
                 raise ValueError("snapshot ticker does not match requested ticker")
             if self.snapshot.data_quality_status != "valid":
                 raise ValueError("recommendation input snapshot must be valid")
+            if self.snapshot_status not in (None, "valid"):
+                raise ValueError("a valid recommendation snapshot must have valid status")
         return self
 
 
@@ -129,3 +132,32 @@ class RecommendationResult(BaseModel):
     rules: dict[str, list[str]] = Field(default_factory=dict)
     what_would_change_it: list[str] = Field(default_factory=list)
     data_quality: RecommendationDataQuality
+
+
+class RecommendationEvaluationResponse(BaseModel):
+    """Result plus the identifier of its persisted audit record."""
+
+    recommendation_id: UUID
+    created_at: datetime
+    result: RecommendationResult
+
+
+class RecommendationAuditRead(BaseModel):
+    """User-owned audit fields retained for later retrieval and monitoring."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    ticker: str
+    trading_date: date | None
+    snapshot_id: UUID | None
+    config_version: str
+    decision: RecommendationDecision
+    blockers: list[str]
+    confidence: ConfidenceLevel
+    created_at: datetime
+
+
+class RecommendationHistoryRead(BaseModel):
+    count: int
+    recommendations: list[RecommendationAuditRead]

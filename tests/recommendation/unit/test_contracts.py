@@ -136,7 +136,7 @@ def test_recommendation_result_matches_downstream_contract() -> None:
 
 
 @pytest.mark.asyncio
-async def test_input_adapter_reads_profile_and_latest_valid_snapshot(
+async def test_input_adapter_reads_profile_and_newest_snapshot(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     user_id = uuid4()
@@ -160,7 +160,7 @@ async def test_input_adapter_reads_profile_and_latest_valid_snapshot(
         recommendation_inputs, "get_active_profile_payload", fake_profile
     )
     monkeypatch.setattr(
-        recommendation_inputs, "get_latest_valid_snapshot", fake_snapshot
+        recommendation_inputs, "get_latest_snapshot", fake_snapshot
     )
 
     loaded = await load_recommendation_inputs(
@@ -176,6 +176,57 @@ async def test_input_adapter_reads_profile_and_latest_valid_snapshot(
     assert loaded.snapshot is not None
     assert loaded.snapshot.id == snapshot.id
     assert calls == [("profile", user_id), ("snapshot", "COMI.CA")]
+    assert loaded.snapshot_status == "valid"
+
+
+@pytest.mark.asyncio
+async def test_newest_stale_snapshot_is_not_replaced_with_older_valid_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user_id = uuid4()
+    older_valid = _snapshot(date=date(2026, 11, 11))
+    newest_stale = _snapshot(
+        date=date(2026, 11, 12), data_quality_status="stale"
+    )
+    snapshot_calls: list[str] = []
+
+    async def fake_profile(_session, _user_id):
+        return _profile(user_id)
+
+    async def fake_newest_snapshot(_session, _ticker):
+        snapshot_calls.append("newest")
+        return newest_stale
+
+    async def fake_older_valid_snapshot(_session, _ticker):
+        snapshot_calls.append("older_valid")
+        return older_valid
+
+    class FakeSession:
+        async def scalar(self, _statement):
+            return SimpleNamespace(sector="Financial Services")
+
+    monkeypatch.setattr(
+        recommendation_inputs, "get_active_profile_payload", fake_profile
+    )
+    monkeypatch.setattr(
+        recommendation_inputs, "get_latest_snapshot", fake_newest_snapshot
+    )
+    monkeypatch.setattr(
+        recommendation_inputs,
+        "get_latest_valid_snapshot",
+        fake_older_valid_snapshot,
+        raising=False,
+    )
+
+    loaded = await load_recommendation_inputs(
+        session=FakeSession(),  # type: ignore[arg-type]
+        user_id=user_id,
+        ticker="COMI.CA",
+    )
+
+    assert loaded.snapshot is None
+    assert loaded.snapshot_status == "stale"
+    assert snapshot_calls == ["newest"]
 
 
 @pytest.mark.asyncio
@@ -196,7 +247,7 @@ async def test_input_adapter_allows_missing_profile_or_snapshot(
         recommendation_inputs, "get_active_profile_payload", no_profile
     )
     monkeypatch.setattr(
-        recommendation_inputs, "get_latest_valid_snapshot", no_snapshot
+        recommendation_inputs, "get_latest_snapshot", no_snapshot
     )
 
     loaded = await load_recommendation_inputs(

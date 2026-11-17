@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.companies.models import Company
 from app.investor.repository import get_active_profile_payload
-from app.technical_analysis.repository import get_latest_valid_snapshot
+from app.technical_analysis.repository import get_latest_snapshot
 from app.technical_analysis.schemas import TechnicalSnapshotRead
 
 from app.recommendation.schemas import RecommendationInputs
@@ -21,20 +21,24 @@ async def load_recommendation_inputs(
     user_id: UUID,
     ticker: str,
 ) -> RecommendationInputs:
-    """Load the active confirmed profile and latest valid snapshot, without writes.
+    """Load the active profile and newest snapshot, without writes.
 
     News is intentionally not read. The caller receives missing profile or
-    snapshot as ``None`` so the decision layer can return a clear result.
+    a non-valid newest snapshot as ``None`` so the decision layer can return a
+    clear result. An older valid snapshot must not hide a newer stale/invalid one.
     """
     normalized_ticker = ticker.strip().upper()
     if not normalized_ticker:
         raise ValueError("ticker must not be empty")
 
     profile = await get_active_profile_payload(session, user_id)
-    snapshot_record = await get_latest_valid_snapshot(session, normalized_ticker)
+    snapshot_record = await get_latest_snapshot(session, normalized_ticker)
+    snapshot_status = (
+        snapshot_record.data_quality_status if snapshot_record is not None else None
+    )
     snapshot = (
         TechnicalSnapshotRead.model_validate(snapshot_record)
-        if snapshot_record is not None
+        if snapshot_record is not None and snapshot_status == "valid"
         else None
     )
     company_ticker = normalized_ticker.removesuffix(".CA")
@@ -54,6 +58,7 @@ async def load_recommendation_inputs(
         ticker=normalized_ticker,
         profile=profile,
         snapshot=snapshot,
+        snapshot_status=snapshot_status,
         sector=company.sector if company is not None else None,
         liquidity_rank_pct=liquidity_rank_pct,
     )
