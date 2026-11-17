@@ -159,6 +159,7 @@ async def test_analysis_upsert_is_idempotent_and_preserves_versions():
             assert latest is not None
             assert latest.analysis_version == "analysis-v2"
             assert latest.direction == "positive"
+            assert latest.review_status == "not_required"
             assert latest.evidence_spans[0]["quote"] == "Revenue increased by 12%."
 
         finally:

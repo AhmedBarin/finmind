@@ -1,17 +1,17 @@
 """Versioned, validated contract for LLM-produced news analysis."""
 
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class NewsDirection(StrEnum):
-    """Company-relative direction supported by the current News Agent contract."""
+    """Evidence-backed direction relative to the linked company or event."""
 
     POSITIVE = "positive"
-    NEGATIVE = "negative"
     NEUTRAL = "neutral"
+    NEGATIVE = "negative"
     UNKNOWN = "unknown"
 
 
@@ -45,7 +45,7 @@ class EvidenceSourceField(StrEnum):
 
 
 class NewsFieldConfidence(BaseModel):
-    """Confidence for each classification dimension, not one blended score."""
+    """Confidence for each extraction dimension, not one blended score."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -87,22 +87,17 @@ class StructuredNewsAnalysis(BaseModel):
     novelty_score: float = Field(ge=0.0, le=1.0)
     confidence: NewsFieldConfidence
     summary_ar: str | None = Field(default=None, max_length=2000)
+    summary_en: str | None = Field(default=None, max_length=2000)
     evidence_spans: list[NewsEvidenceSpan] = Field(default_factory=list, max_length=20)
     requires_human_review: bool = False
     limitations: list[str] = Field(default_factory=list, max_length=20)
 
-    @model_validator(mode="before")
-    @classmethod
-    def map_mixed_direction_to_unknown(cls, value: Any) -> Any:
-        if isinstance(value, dict) and value.get("direction") == "mixed":
-            value = dict(value)
-            value["direction"] = NewsDirection.UNKNOWN.value
-            value["requires_human_review"] = True
-        return value
-
     @model_validator(mode="after")
     def enforce_evidence_and_review_rules(self) -> "StructuredNewsAnalysis":
-        if self.direction == NewsDirection.UNKNOWN and not self.requires_human_review:
+        if (
+            self.direction == NewsDirection.UNKNOWN
+            and not self.requires_human_review
+        ):
             raise ValueError("unknown direction must be flagged for human review")
         if self.direction != NewsDirection.UNKNOWN and not self.evidence_spans:
             raise ValueError("a classified direction requires at least one evidence span")
@@ -129,10 +124,14 @@ def validate_evidence_against_article(
     for span in analysis.evidence_spans:
         source_text = article_fields[span.source_field]
         if not source_text:
-            raise ValueError(f"evidence source {span.source_field.value} is empty or unavailable")
+            raise ValueError(
+                f"evidence source {span.source_field.value} is empty or unavailable"
+            )
 
         if span.start_char is None:
             if span.quote not in source_text:
-                raise ValueError("evidence quote does not occur in the referenced article field")
+                raise ValueError(
+                    "evidence quote does not occur in the referenced article field"
+                )
         elif source_text[span.start_char : span.end_char] != span.quote:
             raise ValueError("evidence quote does not match the referenced article offsets")
