@@ -152,6 +152,10 @@ async def test_input_adapter_reads_profile_and_latest_valid_snapshot(
         calls.append(("snapshot", requested_ticker))
         return snapshot
 
+    class FakeSession:
+        async def scalar(self, _statement):
+            return SimpleNamespace(sector="Financial Services")
+
     monkeypatch.setattr(
         recommendation_inputs, "get_active_profile_payload", fake_profile
     )
@@ -160,7 +164,7 @@ async def test_input_adapter_reads_profile_and_latest_valid_snapshot(
     )
 
     loaded = await load_recommendation_inputs(
-        session=None,  # type: ignore[arg-type]
+        session=FakeSession(),  # type: ignore[arg-type]
         user_id=user_id,
         ticker=" comi.ca ",
     )
@@ -168,6 +172,7 @@ async def test_input_adapter_reads_profile_and_latest_valid_snapshot(
     assert loaded.user_id == user_id
     assert loaded.ticker == "COMI.CA"
     assert loaded.profile == profile
+    assert loaded.sector == "Financial Services"
     assert loaded.snapshot is not None
     assert loaded.snapshot.id == snapshot.id
     assert calls == [("profile", user_id), ("snapshot", "COMI.CA")]
@@ -183,6 +188,10 @@ async def test_input_adapter_allows_missing_profile_or_snapshot(
     async def no_snapshot(_session, _ticker):
         return None
 
+    class FakeSession:
+        async def scalar(self, _statement):
+            return None
+
     monkeypatch.setattr(
         recommendation_inputs, "get_active_profile_payload", no_profile
     )
@@ -191,7 +200,7 @@ async def test_input_adapter_allows_missing_profile_or_snapshot(
     )
 
     loaded = await load_recommendation_inputs(
-        session=None,  # type: ignore[arg-type]
+        session=FakeSession(),  # type: ignore[arg-type]
         user_id=uuid4(),
         ticker="COMI.CA",
     )
