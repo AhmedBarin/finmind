@@ -6,6 +6,45 @@ from dataclasses import dataclass
 CONFIG_VERSION = "technical-v1"
 SNAPSHOT_INPUT_HISTORY_SESSIONS = 300  # Covers 252-session percentiles plus warm-up.
 
+# EGX30 membership used by the project price backfill. Bump the universe version
+# whenever constituent membership changes so percentile inputs remain auditable.
+# VLMR.CA is included in the universe but is not available from Yahoo Finance;
+# its market-data fallback must provide history for it to participate in ranking.
+EGX30_UNIVERSE_VERSION = "egx30-v1"
+EGX30_TICKERS = (
+    "HRHO.CA",
+    "CCAP.CA",
+    "AMOC.CA",
+    "COMI.CA",
+    "ETEL.CA",
+    "GBCO.CA",
+    "ORAS.CA",
+    "ORHD.CA",
+    "FWRY.CA",
+    "EFIH.CA",
+    "TMGH.CA",
+    "EMFD.CA",
+    "BTFH.CA",
+    "PHDC.CA",
+    "MCQE.CA",
+    "ADIB.CA",
+    "SKPC.CA",
+    "EAST.CA",
+    "HELI.CA",
+    "CLHO.CA",
+    "ISPH.CA",
+    "EGAL.CA",
+    "RMDA.CA",
+    "EFID.CA",
+    "ABUK.CA",
+    "RAYA.CA",
+    "MFPC.CA",
+    "JUFO.CA",
+    "ALCN.CA",
+    "VLMR.CA",
+)
+LIQUIDITY_RANK_LOOKBACK_SESSIONS = 20
+
 
 # Scoring tables are versioned configuration: a change should be reviewed and
 # assigned a new config_version when snapshots are generated.
