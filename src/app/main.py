@@ -2,10 +2,13 @@ from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.responses import FileResponse
 
 from app.core.config import settings
+from app.core.security import require_news_agent_auth
+from app.api.middleware import check_news_agent_rate_limit, TraceIdMiddleware
+from app.api.error_handlers import safe_unhandled_error
 from app.db.session import engine
 from app.investor.checkpointer import open_postgres_checkpointer
 from app.investor.graph import build_interview_graph
@@ -51,8 +54,15 @@ app = FastAPI(
     title="FinMind API",
     lifespan=lifespan,
 )
+app.add_middleware(TraceIdMiddleware)
+app.add_exception_handler(Exception, safe_unhandled_error)
 
 app.include_router(news_router)
+app.include_router(
+    news_router,
+    prefix="/api/v1",
+    dependencies=[Depends(require_news_agent_auth), Depends(check_news_agent_rate_limit)],
+)
 app.include_router(
     monitoring_router,
     prefix="/api/v1/monitoring",

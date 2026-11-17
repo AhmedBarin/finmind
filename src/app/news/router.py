@@ -11,6 +11,8 @@ from app.core.dependencies import (
     get_news_analysis_tools,
     get_news_service,
 )
+from app.core.security import require_news_agent_auth
+from app.api.middleware import check_news_agent_rate_limit
 from app.news.analysis_service import NewsAnalysisService
 from app.news.groq_client import GroqAnalysisError
 from app.news.schemas import NewsAnalysisRead, NewsArticleRead
@@ -34,6 +36,8 @@ async def structured_news_analysis_tool(
     request: StructuredAnalysisRequest,
     session: AsyncSession = Depends(get_db_session),
     tools: NewsAnalysisTools = Depends(get_news_analysis_tools),
+    _client: str = Depends(require_news_agent_auth),
+    _rate_limit: None = Depends(check_news_agent_rate_limit),
 ) -> StructuredAnalysisResponse:
     return await tools.structured_news_analysis(session, request)
 

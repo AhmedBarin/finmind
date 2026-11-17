@@ -50,3 +50,5 @@ def test_analysis_request_is_bounded_and_versioned():
         StructuredAnalysisRequest()
     with pytest.raises(ValidationError):
         StructuredAnalysisRequest(article_ids=[uuid4()], permitted_text="text")
+    with pytest.raises(ValidationError):
+        StructuredAnalysisRequest(permitted_text="x" * 10001)
