@@ -3,11 +3,16 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, Query
 
 from app.core.dependencies import get_news_service
+from app.core.security import get_current_principal
 from app.news.schemas import NewsArticleRead
 from app.news.service import NewsService
 
 
-router = APIRouter(prefix="/news", tags=["news"])
+router = APIRouter(
+    prefix="/news",
+    tags=["news"],
+    dependencies=[Depends(get_current_principal)],
+)
 
 
 @router.get("/articles", response_model=list[NewsArticleRead])

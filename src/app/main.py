@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.core.security.errors import register_exception_handlers
 from app.db.session import engine
 from app.monitoring.routers import monitoring_router
 from app.news.router import router as news_router
@@ -29,6 +30,7 @@ app = FastAPI(
     title="FinMind API",
     lifespan=lifespan,
 )
+register_exception_handlers(app)
 
 app.include_router(news_router)
 app.include_router(

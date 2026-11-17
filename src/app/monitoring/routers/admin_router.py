@@ -4,14 +4,19 @@ from __future__ import annotations
 
 import asyncio
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 
+from app.core.security import require_admin_or_internal
 from app.db.session import SessionLocal
 from app.monitoring.models.monitoring_run import MonitoringRun
 from app.monitoring.services.job_runner import run_monitoring_cycle
 
-router = APIRouter(prefix="/admin", tags=["admin"])
+router = APIRouter(
+    prefix="/admin",
+    tags=["admin"],
+    dependencies=[Depends(require_admin_or_internal)],
+)
 
 
 @router.post("/run", status_code=202)

@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
 import pytest_asyncio
 from sqlalchemy import text
 
+from app.core.security import Role
 from app.db.session import SessionLocal, engine
 from app.main import app
+from tests.auth_helpers import bearer_headers
 
 BASE = "http://test/api/v1/monitoring"
 
@@ -30,7 +32,7 @@ USER_B = str(uuid4())
 
 
 def _headers(user_id: str = USER_A) -> dict[str, str]:
-    return {"X-User-ID": user_id}
+    return bearer_headers(UUID(user_id))
 
 
 def _rsi_rule_payload(ticker: str = "AAPL") -> dict:
@@ -181,12 +183,12 @@ class TestRulesRouter:
                 {"rid": rule_id},
             )
 
-    async def test_missing_header_returns_422(self):
+    async def test_missing_token_returns_401(self):
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url=BASE
         ) as client:
             resp = await client.get("/rules")
-            assert resp.status_code == 422
+            assert resp.status_code == 401
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -346,7 +348,9 @@ class TestAdminRouter:
             async with httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=app), base_url=BASE
             ) as client:
-                resp = await client.post("/admin/run")
+                resp = await client.post(
+                    "/admin/run", headers=bearer_headers(role=Role.ADMIN)
+                )
                 assert resp.status_code == 202
                 assert "triggered" in resp.json()["detail"].lower()
 
@@ -354,6 +358,8 @@ class TestAdminRouter:
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url=BASE
         ) as client:
-            resp = await client.get("/admin/runs")
+            resp = await client.get(
+                "/admin/runs", headers=bearer_headers(role=Role.ADMIN)
+            )
             assert resp.status_code == 200
             assert isinstance(resp.json(), list)
