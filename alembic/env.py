@@ -12,6 +12,7 @@ from app.market_data import models as _market_data_models  # noqa: F401
 from app.investor import models as _investor_models  # noqa: F401
 from app.news import models as _news_models  # Register news models with Base.metadata
 from app.monitoring import models as _monitoring_models  # noqa: F401
+from app.recommendation import models as _recommendation_models  # noqa: F401
 from app.technical_analysis import models as _technical_analysis_models  # noqa: F401
 
 
