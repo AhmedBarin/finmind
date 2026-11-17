@@ -1,4 +1,5 @@
 import asyncio
+import argparse
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -10,28 +11,41 @@ from app.news.sources.registry import create_default_registry
 CAIRO_TZ = ZoneInfo("Africa/Cairo")
 
 
-async def main() -> None:
+async def main(source_key: str | None = None) -> None:
     now = datetime.now(CAIRO_TZ)
     since = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
+    registry = create_default_registry()
     service = NewsService(
         session_factory=SessionLocal,
-        registry=create_default_registry(),
+        registry=registry,
     )
 
     try:
-        summary = await service.ingest_source("mubasher", since=since)
-        print("\n=== Ingestion summary ===")
-        print(f"Source: {summary.source_key}")
-        print(f"Fetched: {summary.fetched}")
-        print(f"Saved: {summary.saved}")
-        print(f"Duplicates: {summary.duplicates}")
-        print(f"Failed: {summary.failed}")
-        print(f"Run ID: {summary.run_id}")
+        sources = registry.all()
+        if source_key:
+            sources = (registry.get(source_key),)
+
+        for source in sources:
+            summary = await service.ingest_source(source.source_key, since=since)
+            print("\n=== Ingestion summary ===")
+            print(f"Source: {summary.source_key}")
+            print(f"Fetched: {summary.fetched}")
+            print(f"Saved: {summary.saved}")
+            print(f"Duplicates: {summary.duplicates}")
+            print(f"Failed: {summary.failed}")
+            print(f"Run ID: {summary.run_id}")
         
     finally:
         await engine.dispose()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    parser = argparse.ArgumentParser(description="Run FinMind news ingestion")
+    parser.add_argument(
+        "--source",
+        choices=("mubasher", "daily_news_egypt"),
+        help="Run one source only; omit it to run all registered sources.",
+    )
+    args = parser.parse_args()
+    asyncio.run(main(args.source))

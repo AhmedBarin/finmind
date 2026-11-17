@@ -132,13 +132,21 @@ class NewsService:
                                 ):
                                     text_parts.append(body_excerpt)
 
+                                context_tickers = list(dict.fromkeys(
+                                    [
+                                        *article.raw_metadata.get(
+                                            "mubasher_listing_tickers", []
+                                        ),
+                                        *article.raw_metadata.get(
+                                            "daily_news_listing_tickers", []
+                                        ),
+                                    ]
+                                ))
+
                                 matches = match_companies(
                                         "\n".join(text_parts),
                                         aliases,
-                                        context_tickers=article.raw_metadata.get(
-                                            "mubasher_listing_tickers",
-                                            [],
-                                        ),
+                                        context_tickers=context_tickers,
                                     )
 
                                 await self.repository.upsert_article_company_links(

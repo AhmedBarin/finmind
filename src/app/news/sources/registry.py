@@ -1,5 +1,6 @@
 from app.news.sources.base import NewsSourceAdapter
 from app.news.sources.mubasher import MubasherSource
+from app.news.sources.daily_news import DailyNewsSource
 
 
 class SourceRegistry:
@@ -32,4 +33,5 @@ class SourceRegistry:
 def create_default_registry() -> SourceRegistry:
     registry = SourceRegistry()
     registry.register(MubasherSource())
+    registry.register(DailyNewsSource())
     return registry
