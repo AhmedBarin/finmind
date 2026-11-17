@@ -11,6 +11,7 @@ from app.news.sources.registry import create_default_registry
 from app.agents.news_agent.tools import NewsAgentTools
 from app.agents.news_agent.analysis_tools import NewsAnalysisTools
 from app.agents.news_agent.agent import LangChainNewsAgent
+from app.agents.news_agent.retrieval_tools import NewsRetrievalTools
 
 
 async def get_db_session() -> AsyncIterator[AsyncSession]:
@@ -36,7 +37,6 @@ def get_news_analysis_tools() -> NewsAnalysisTools:
 
 def get_news_retrieval_tools() -> object:
     try:
-        from app.agents.news_agent.retrieval_tools import NewsRetrievalTools
         from app.news.retrieval import PersistentChromaNewsVectorIndex
         index = PersistentChromaNewsVectorIndex(path=settings.news_vector_store_path, collection_name=settings.news_vector_collection)
         return NewsRetrievalTools(index)

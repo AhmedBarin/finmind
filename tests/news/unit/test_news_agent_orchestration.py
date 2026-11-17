@@ -26,6 +26,7 @@ def test_only_six_allowlisted_tools_exist():
         "structured_news_analysis",
     }
     assert inspect.iscoroutinefunction(LangChainNewsAgent.ask)
+    assert "max_tool_calls" not in inspect.signature(LangChainNewsAgent.__init__).parameters
 
 
 def test_missing_langchain_is_reported_at_tool_construction_boundary():
@@ -54,3 +55,11 @@ def test_dependency_builds_real_persistent_retrieval_tools(monkeypatch):
     tools = dependencies.get_news_retrieval_tools()
     assert isinstance(tools, NewsRetrievalTools)
     assert isinstance(tools.index.collection, FakeCollection)
+
+
+def test_tool_failures_return_model_readable_errors():
+    from app.agents.news_agent.tool_registry import _tool_error
+
+    result = _tool_error("search_news", ValueError("bad request"))
+    assert result["status"] == "failed"
+    assert result["data"]["coverage_status"] == "unavailable"

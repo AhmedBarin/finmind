@@ -17,14 +17,13 @@ avoid, or any final investment recommendation. Similarity is not a prediction.
 
 
 class LangChainNewsAgent:
-    def __init__(self, *, session, news_tools, retrieval_tools, analysis_tools, model_name: str, max_tool_calls: int = 3) -> None:
+    def __init__(self, *, session, news_tools, retrieval_tools, analysis_tools, model_name: str) -> None:
         try:
             from langchain_groq import ChatGroq
             from langchain.agents import create_agent
         except ImportError as exc:
             raise RuntimeError("LangChain dependencies are not installed; run `uv sync`.") from exc
 
-        self.max_tool_calls = max_tool_calls
         tools = build_news_tools(session=session, news_tools=news_tools, retrieval_tools=retrieval_tools, analysis_tools=analysis_tools)
         self.agent = create_agent(
             model=ChatGroq(model=model_name, temperature=0),

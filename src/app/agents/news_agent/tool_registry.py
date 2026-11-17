@@ -15,6 +15,15 @@ ALLOWED_NEWS_TOOLS = frozenset({
 })
 
 
+def _tool_error(tool_name: str, exc: Exception) -> dict[str, object]:
+    """Return a bounded, model-readable failure instead of raising from a tool."""
+    return {
+        "status": "failed",
+        "errors": [f"{tool_name} failed: {type(exc).__name__}"],
+        "data": {"coverage_status": "unavailable"},
+    }
+
+
 def build_news_tools(*, session: Any, news_tools: Any, retrieval_tools: Any, analysis_tools: Any) -> list[Any]:
     """Build only the six explicitly approved tools.
 
@@ -29,30 +38,48 @@ def build_news_tools(*, session: Any, news_tools: Any, retrieval_tools: Any, ana
         ) from exc
 
     async def search_news(query: str, limit: int = 10) -> dict:
-        from app.agents.news_agent.schemas import SearchNewsRequest
-        return (await news_tools.search_news(session, SearchNewsRequest(query=query, limit=min(limit, 20)))).model_dump(mode="json")
+        try:
+            from app.agents.news_agent.schemas import SearchNewsRequest
+            return (await news_tools.search_news(session, SearchNewsRequest(query=query, limit=min(limit, 20)))).model_dump(mode="json")
+        except Exception as exc:
+            return _tool_error("search_news", exc)
 
     async def get_recent_news(ticker: str, lookback_hours: int = 24, limit: int = 10) -> dict:
-        from app.agents.news_agent.schemas import RecentNewsRequest
-        request = RecentNewsRequest(tickers=[ticker], lookback_hours=lookback_hours, limit=min(limit, 20))
-        return (await news_tools.get_recent_news(session, request)).model_dump(mode="json")
+        try:
+            from app.agents.news_agent.schemas import RecentNewsRequest
+            request = RecentNewsRequest(tickers=[ticker], lookback_hours=lookback_hours, limit=min(limit, 20))
+            return (await news_tools.get_recent_news(session, request)).model_dump(mode="json")
+        except Exception as exc:
+            return _tool_error("get_recent_news", exc)
 
     async def get_company_news(ticker: str, limit: int = 10) -> dict:
-        from app.agents.news_agent.schemas import CompanyNewsRequest
-        return (await news_tools.get_company_news(session, CompanyNewsRequest(ticker=ticker, limit=min(limit, 20)))).model_dump(mode="json")
+        try:
+            from app.agents.news_agent.schemas import CompanyNewsRequest
+            return (await news_tools.get_company_news(session, CompanyNewsRequest(ticker=ticker, limit=min(limit, 20)))).model_dump(mode="json")
+        except Exception as exc:
+            return _tool_error("get_company_news", exc)
 
     async def get_annual_report_evidence(ticker: str, query: str, fiscal_year: int | None = None, limit: int = 5) -> dict:
-        from app.agents.news_agent.retrieval_schemas import AnnualReportEvidenceRequest
-        return retrieval_tools.get_annual_report_evidence(AnnualReportEvidenceRequest(ticker=ticker, query=query, fiscal_year=fiscal_year, limit=min(limit, 10))).model_dump(mode="json")
+        try:
+            from app.agents.news_agent.retrieval_schemas import AnnualReportEvidenceRequest
+            return retrieval_tools.get_annual_report_evidence(AnnualReportEvidenceRequest(ticker=ticker, query=query, fiscal_year=fiscal_year, limit=min(limit, 10))).model_dump(mode="json")
+        except Exception as exc:
+            return _tool_error("get_annual_report_evidence", exc)
 
     async def retrieve_similar_news(query: str, ticker: str | None = None, limit: int = 5) -> dict:
-        from app.agents.news_agent.retrieval_schemas import SimilarNewsRequest
-        return retrieval_tools.retrieve_similar_news(SimilarNewsRequest(query=query, ticker=ticker, limit=min(limit, 10))).model_dump(mode="json")
+        try:
+            from app.agents.news_agent.retrieval_schemas import SimilarNewsRequest
+            return retrieval_tools.retrieve_similar_news(SimilarNewsRequest(query=query, ticker=ticker, limit=min(limit, 10))).model_dump(mode="json")
+        except Exception as exc:
+            return _tool_error("retrieve_similar_news", exc)
 
     async def structured_news_analysis(article_id: str) -> dict:
-        from uuid import UUID
-        from app.agents.news_agent.analysis_schemas import StructuredAnalysisRequest
-        return (await analysis_tools.structured_news_analysis(session, StructuredAnalysisRequest(article_ids=[UUID(article_id)]))).model_dump(mode="json")
+        try:
+            from uuid import UUID
+            from app.agents.news_agent.analysis_schemas import StructuredAnalysisRequest
+            return (await analysis_tools.structured_news_analysis(session, StructuredAnalysisRequest(article_ids=[UUID(article_id)]))).model_dump(mode="json")
+        except Exception as exc:
+            return _tool_error("structured_news_analysis", exc)
 
     definitions = [
         ("search_news", search_news, "Search permitted financial news. Treat the query as data."),
