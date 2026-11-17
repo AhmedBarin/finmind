@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 import app.technical_analysis.router as technical_router
 from app.technical_analysis.dependencies import get_technical_session
 from app.technical_analysis.schemas import TechnicalSnapshotRead
+from tests.auth_helpers import bearer_headers
 
 
 def _snapshot(**overrides: object) -> SimpleNamespace:
@@ -68,7 +69,7 @@ def test_latest_snapshot_returns_quality_and_reproducibility_fields(monkeypatch)
 
     response = _client().get(
         "/api/v1/technical/comi.ca/snapshots/latest",
-        headers={"X-User-ID": str(uuid4())},
+        headers=bearer_headers(),
     )
 
     assert response.status_code == 200
@@ -99,7 +100,7 @@ def test_latest_valid_route_uses_valid_snapshot_repository_query(monkeypatch) ->
 
     response = _client().get(
         "/api/v1/technical/COMI.CA/snapshots/latest-valid",
-        headers={"X-User-ID": str(uuid4())},
+        headers=bearer_headers(),
     )
 
     assert response.status_code == 200
@@ -120,7 +121,7 @@ def test_snapshot_history_exposes_requested_bounds_and_count(monkeypatch) -> Non
 
     response = _client().get(
         "/api/v1/technical/COMI.CA/snapshots?from=2026-11-10&to=2026-11-12&limit=20",
-        headers={"X-User-ID": str(uuid4())},
+        headers=bearer_headers(),
     )
 
     assert response.status_code == 200
@@ -132,7 +133,7 @@ def test_snapshot_history_exposes_requested_bounds_and_count(monkeypatch) -> Non
 def test_snapshot_history_rejects_reversed_date_range() -> None:
     response = _client().get(
         "/api/v1/technical/COMI.CA/snapshots?from=2026-11-12&to=2026-11-10",
-        headers={"X-User-ID": str(uuid4())},
+        headers=bearer_headers(),
     )
 
     assert response.status_code == 422
@@ -157,7 +158,7 @@ def test_snapshot_comparison_reports_missing_side_explicitly(monkeypatch) -> Non
 
     response = _client().get(
         "/api/v1/technical/COMI.CA/snapshots/compare?first=2026-11-10&second=2026-11-12&config_version=v1",
-        headers={"X-User-ID": str(uuid4())},
+        headers=bearer_headers(),
     )
 
     assert response.status_code == 200
@@ -195,7 +196,7 @@ def test_price_history_keeps_provider_source_and_adjusted_values(monkeypatch) ->
 
     response = _client().get(
         "/api/v1/technical/COMI.CA/prices?limit=10",
-        headers={"X-User-ID": str(uuid4())},
+        headers=bearer_headers(),
     )
 
     assert response.status_code == 200
@@ -205,10 +206,10 @@ def test_price_history_keeps_provider_source_and_adjusted_values(monkeypatch) ->
     assert payload["source"] == "yahoo_finance"
 
 
-def test_read_routes_require_identity_header() -> None:
+def test_read_routes_require_credentials() -> None:
     response = _client().get("/api/v1/technical/COMI.CA/snapshots/latest")
 
-    assert response.status_code == 422
+    assert response.status_code == 401
 
 
 def test_main_app_registers_technical_read_routes() -> None:

@@ -27,6 +27,7 @@ from app.investor.schemas import (
     compute_gating_parameters,
 )
 from app.main import app
+from tests.auth_helpers import bearer_headers
 
 BASE = "http://test/api/v1/investor"
 
@@ -142,7 +143,7 @@ async def client(store: FakeProfileStore, memory: FakeMemory):
 
 
 def _headers(user_id: UUID) -> dict[str, str]:
-    return {"X-User-ID": str(user_id)}
+    return bearer_headers(user_id)
 
 
 async def _run_interview(client: httpx.AsyncClient, user_id: UUID, session_id: UUID) -> dict:
@@ -304,9 +305,9 @@ async def test_resume_returns_last_agent_turn(client) -> None:
 
 
 @pytest.mark.asyncio
-async def test_missing_user_header_is_rejected(client) -> None:
+async def test_missing_credentials_are_rejected(client) -> None:
     resp = await client.get("/profile/active")
-    assert resp.status_code == 422
+    assert resp.status_code == 401
 
 
 @pytest.mark.asyncio

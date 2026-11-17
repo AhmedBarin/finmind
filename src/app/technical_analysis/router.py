@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.market_data.repository import get_stock_price_history
-from app.monitoring.dependencies import get_current_user_id
+from app.core.security import get_current_user_id
 from app.technical_analysis.dependencies import get_technical_session
 from app.technical_analysis.repository import (
     compare_snapshots,

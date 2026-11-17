@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from app.core.dependencies import get_db_session, get_news_analysis_service
 from app.main import app
 from app.news.groq_client import GroqAnalysisError
+from tests.auth_helpers import bearer_headers
 
 
 class SessionStub:
@@ -78,7 +79,8 @@ def test_analyze_article_endpoint_returns_persisted_analysis_and_commits():
     app.dependency_overrides[get_news_analysis_service] = lambda: service
     try:
         response = TestClient(app).post(
-            f"/news/articles/{article_id}/analysis?company_id={company_id}"
+            f"/news/articles/{article_id}/analysis?company_id={company_id}",
+            headers=bearer_headers(),
         )
     finally:
         app.dependency_overrides.clear()
@@ -101,7 +103,9 @@ def test_analyze_article_endpoint_maps_groq_failure_to_bad_gateway():
     app.dependency_overrides[get_db_session] = override_session
     app.dependency_overrides[get_news_analysis_service] = lambda: service
     try:
-        response = TestClient(app).post(f"/news/articles/{article_id}/analysis")
+        response = TestClient(app).post(
+            f"/news/articles/{article_id}/analysis", headers=bearer_headers()
+        )
     finally:
         app.dependency_overrides.clear()
 

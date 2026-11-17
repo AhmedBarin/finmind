@@ -19,6 +19,7 @@ from app.market_data.ingestion import ingest_price_history
 from app.market_data.models import StockPrice
 from app.technical_analysis.dependencies import get_technical_session
 from app.technical_analysis.snapshot_service import calculate_and_persist_snapshot
+from tests.auth_helpers import bearer_headers
 
 
 @pytest_asyncio.fixture
@@ -118,7 +119,7 @@ async def test_stored_prices_produce_valid_snapshot_readable_through_api(
         async with httpx.AsyncClient(
             transport=transport,
             base_url="http://test",
-            headers={"X-User-ID": str(uuid4())},
+            headers=bearer_headers(),
         ) as client:
             response = await client.get(
                 f"/api/v1/technical/{ticker}/snapshots/latest-valid"
@@ -165,7 +166,7 @@ async def test_insufficient_history_is_visible_but_not_read_as_latest_valid(
         async with httpx.AsyncClient(
             transport=transport,
             base_url="http://test",
-            headers={"X-User-ID": str(uuid4())},
+            headers=bearer_headers(),
         ) as client:
             latest_response = await client.get(
                 f"/api/v1/technical/{ticker}/snapshots/latest"
@@ -214,7 +215,7 @@ async def test_full_offline_engine_flow_prints_snapshot(
         async with httpx.AsyncClient(
             transport=transport,
             base_url="http://test",
-            headers={"X-User-ID": str(uuid4())},
+            headers=bearer_headers(),
         ) as client:
             response = await client.get(
                 f"/api/v1/technical/{ticker}/snapshots/latest-valid"

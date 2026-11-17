@@ -1,8 +1,8 @@
 """FastAPI routes for the Investor Agent (Spec Section 10).
 
 Mounted under ``/api/v1/investor``. Every route is scoped to the caller via
-``get_current_user_id`` (the shared ``X-User-ID`` stand-in until PLAN-003
-ships real authentication).
+``get_current_user_id``, which requires an ``Authorization: Bearer <jwt>``
+header (PLAN-003).
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ from app.investor.schemas import (
     RecommendationFeedbackRequest,
     SessionConfirmRequest,
 )
-from app.monitoring.dependencies import get_current_user_id
+from app.core.security import get_current_user_id
 
 router = APIRouter(prefix="/api/v1/investor", tags=["investor"])
 
