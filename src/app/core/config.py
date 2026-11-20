@@ -6,6 +6,8 @@ class Settings(BaseSettings):
     database_url: str
     groq_api_key: SecretStr | None = None
     news_analysis_model: str | None = None
+    news_vector_store_path: str = "./data/chroma"
+    news_vector_collection: str = "finmind_news"
 
     # Investor Agent LLM extraction (optional). When ``ollama_base_url`` is unset
     # the interview uses the deterministic keyword extractor only.
