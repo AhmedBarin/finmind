@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.db.session import SessionLocal
+from app.core.dependencies import get_news_retrieval_indexer
 from app.news.service import NewsService
 from app.news.sources.registry import create_default_registry
 
@@ -22,6 +23,7 @@ async def run_daily_news_ingestion() -> None:
     service = NewsService(
         session_factory=SessionLocal,
         registry=registry,
+        retrieval_indexer=get_news_retrieval_indexer(),
     )
 
     for source in registry.all():

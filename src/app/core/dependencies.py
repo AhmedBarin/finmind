@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator
+from functools import lru_cache
 
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,6 +8,7 @@ from app.core.config import settings
 from app.db.session import SessionLocal
 from app.news.analysis_service import NewsAnalysisService
 from app.news.service import NewsService
+from app.news.retrieval import build_persistent_news_indexer
 from app.news.sources.registry import create_default_registry
 from app.agents.news_agent.tools import NewsAgentTools
 from app.agents.news_agent.analysis_tools import NewsAnalysisTools
@@ -19,8 +21,20 @@ async def get_db_session() -> AsyncIterator[AsyncSession]:
         yield session
 
 
+@lru_cache(maxsize=1)
+def get_news_retrieval_indexer():
+    return build_persistent_news_indexer(
+        path=settings.news_vector_store_path,
+        collection_name=settings.news_vector_collection,
+    )
+
+
 def get_news_service() -> NewsService:
-    return NewsService(session_factory=SessionLocal, registry=create_default_registry())
+    return NewsService(
+        session_factory=SessionLocal,
+        registry=create_default_registry(),
+        retrieval_indexer=get_news_retrieval_indexer(),
+    )
 
 
 def get_news_analysis_service() -> NewsAnalysisService:

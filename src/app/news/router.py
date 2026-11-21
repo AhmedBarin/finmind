@@ -4,7 +4,9 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.middleware import check_news_agent_rate_limit, validate_agent_message
 from app.core.dependencies import get_db_session, get_news_agent, get_news_agent_tools, get_news_analysis_service, get_news_analysis_tools, get_news_service
+from app.core.security import require_news_agent_auth
 from app.news.analysis_service import NewsAnalysisService
 from app.news.groq_client import GroqAnalysisError
 from app.news.schemas import NewsAnalysisRead, NewsArticleRead
@@ -16,10 +18,18 @@ from app.agents.news_agent.analysis_tools import NewsAnalysisTools
 from app.agents.news_agent.agent import LangChainNewsAgent
 from app.agents.news_agent.agent_schemas import NewsAgentRequest, NewsAgentResponse
 
-router = APIRouter(prefix="/news", tags=["news"])
+router = APIRouter(
+    prefix="/news",
+    tags=["news"],
+    dependencies=[
+        Depends(require_news_agent_auth),
+        Depends(check_news_agent_rate_limit),
+    ],
+)
 
 @router.post("/ask", response_model=NewsAgentResponse)
 async def ask_news_agent(request: NewsAgentRequest, agent: LangChainNewsAgent = Depends(get_news_agent)) -> NewsAgentResponse:
+    request.message = validate_agent_message(request.message)
     try:
         return await agent.ask(request)
     except RuntimeError as exc:
