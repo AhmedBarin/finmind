@@ -63,3 +63,23 @@ def test_tool_failures_return_model_readable_errors():
     result = _tool_error("search_news", ValueError("bad request"))
     assert result["status"] == "failed"
     assert result["data"]["coverage_status"] == "unavailable"
+
+
+def test_agent_collects_article_citations_from_tool_evidence():
+    message = SimpleNamespace(
+        type="tool",
+        content='{"data": {"coverage_status": "available", "articles": '
+        '[{"article_id": "article-1", "title": "CIB update", '
+        '"source_name": "Daily News Egypt", "source_url": "https://example.test/1", '
+        '"published_at": "2026-11-10T00:00:00Z"}]}, "warnings": []}',
+    )
+    citations, coverage, warnings = LangChainNewsAgent._collect_tool_evidence([message])
+    assert coverage == "available"
+    assert warnings == []
+    assert citations == [{
+        "article_id": "article-1",
+        "title": "CIB update",
+        "source_name": "Daily News Egypt",
+        "source_url": "https://example.test/1",
+        "published_at": "2026-11-10T00:00:00Z",
+    }]

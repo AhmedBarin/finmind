@@ -11,6 +11,7 @@ from app.news.processor import NewsProcessor
 from app.news.repository import NewsRepository
 from app.news.sources.registry import SourceRegistry
 from app.news.tool_repository import NewsToolRepository, ToolArticleRow
+from app.news.retrieval import NewsRetrievalIndexer
 from app.agents.news_agent.schemas import (
     CompanyNewsRequest,
     NewsToolArticle,
@@ -38,12 +39,14 @@ class NewsService:
         self,
         session_factory: async_sessionmaker[AsyncSession],
         registry: SourceRegistry,
+        retrieval_indexer: NewsRetrievalIndexer | None = None,
     ) -> None:
         self.session_factory = session_factory
         self.registry = registry
         self.repository = NewsRepository()
         self.processor = NewsProcessor()
         self.tool_repository = NewsToolRepository()
+        self.retrieval_indexer = retrieval_indexer
 
     async def ingest_source(
         self,
@@ -154,6 +157,26 @@ class NewsService:
                                     article_id=article_id,
                                     matches=matches,
                                 )
+
+                                if self.retrieval_indexer is not None:
+                                    stored_article = await session.get(NewsArticle, article_id)
+                                    confirmed_tickers = [
+                                        match.ticker
+                                        for match in matches
+                                        if match.status == "confirmed"
+                                    ]
+                                    if stored_article is not None:
+                                        index_result = self.retrieval_indexer.index_article(
+                                            article=stored_article,
+                                            source_name=source.name,
+                                            ticker_links=confirmed_tickers,
+                                        )
+                                        if index_result.status != "ok":
+                                            logger.warning(
+                                                "News article %s was not indexed: %s",
+                                                article_id,
+                                                index_result.error or index_result.skipped_reason,
+                                            )
 
                         except Exception:
                             failed += 1
