@@ -44,7 +44,10 @@ def build_explanation_graph(
 
     def build_context(state: ExplanationState) -> dict[str, Any]:
         payload = state.get("input_payload", {})
-        return {"context": json.dumps(payload, ensure_ascii=False, sort_keys=True)}
+        return {
+            "context": payload.get("context")
+            or json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        }
 
     async def generate_output(state: ExplanationState) -> dict[str, Any]:
         errors = state.get("validation_errors", [])
