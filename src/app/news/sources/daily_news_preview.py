@@ -75,6 +75,78 @@ class DailyNewsPreviewSource(NewsSourceAdapter):
         return parsed if parsed.tzinfo else parsed.replace(tzinfo=CAIRO)
 
     @classmethod
+    def extract_url_date(cls, url: str) -> datetime | None:
+        """Extract the publication date encoded in Daily News URLs.
+
+        Daily News Egypt article URLs commonly contain ``/YYYY/MM/DD/``.
+        This is used only as a fallback when page metadata and the WordPress
+        API do not provide a usable publication timestamp.
+        """
+        match = re.search(r"/(20\d{2})/(0[1-9]|1[0-2])/(0[1-9]|[12]\d|3[01])(?:/|$)", url)
+        if not match:
+            return None
+        try:
+            return datetime(
+                int(match.group(1)),
+                int(match.group(2)),
+                int(match.group(3)),
+                tzinfo=CAIRO,
+            )
+        except ValueError:
+            return None
+
+    @classmethod
+    def resolve_published_at(
+        cls,
+        *,
+        article: FetchedArticle,
+        api_date: str | None,
+        url: str,
+        now: datetime | None = None,
+    ) -> tuple[datetime | None, str | None]:
+        """Resolve publication time without substituting retrieval time.
+
+        The source page is authoritative when it exposes a valid date. The
+        WordPress API and URL date are deterministic fallbacks. Unknown dates
+        remain unknown so date filters cannot silently include an article at
+        the time it was scraped.
+        """
+        url_date = cls.extract_url_date(url)
+        page_date = article.published_at
+        api_published_at = cls.parse_date(api_date)
+
+        # Daily News frequently exposes a generic/current value in a loose
+        # ``date`` meta tag. When the URL contains the article's canonical
+        # YYYY/MM/DD date, prefer it whenever the page metadata disagrees.
+        # Preserve the page timestamp only when it agrees with that date.
+        if url_date is not None:
+            if page_date is not None and page_date.date() == url_date.date():
+                published_at = page_date
+                source = "page_metadata"
+            else:
+                published_at = url_date
+                source = "url"
+        elif page_date is not None:
+            published_at = page_date
+            source = "page_metadata"
+        else:
+            published_at = api_published_at
+            source = "wordpress_api" if published_at else None
+
+        if published_at is None:
+            return None, None
+
+        if published_at.tzinfo is None:
+            published_at = published_at.replace(tzinfo=CAIRO)
+        published_at = published_at.astimezone(timezone.utc)
+        reference = now or datetime.now(timezone.utc)
+        if reference.tzinfo is None:
+            reference = reference.replace(tzinfo=timezone.utc)
+        if published_at > reference + timedelta(days=1):
+            return None, "future_date"
+        return published_at, source
+
+    @classmethod
     def extract_date(cls, soup: BeautifulSoup) -> datetime | None:
         candidates: list[str] = []
         for tag in soup.find_all("time"):
@@ -167,14 +239,15 @@ class DailyNewsPreviewSource(NewsSourceAdapter):
         async with httpx.AsyncClient(headers=headers, timeout=self.timeout_seconds, follow_redirects=True) as client:
             for ticker in self.tickers:
                 print(f"Searching Daily News Egypt for {ticker} ({EGX_COMPANIES[ticker]})...")
-                candidates: list[str] = []
+                candidates: dict[str, str | None] = {}
                 for query in (ticker, EGX_COMPANIES[ticker]):
                     try:
-                        candidates.extend(url for url, _ in await self._search(client, query))
+                        for url, api_date in await self._search(client, query):
+                            candidates.setdefault(url, api_date)
                     except (httpx.HTTPError, ValueError) as exc:
                         print(f"Search failed for {ticker}: {exc}")
                         break
-                for url in dict.fromkeys(candidates):
+                for url, api_date in candidates.items():
                     if url in seen:
                         continue
                     try:
@@ -186,7 +259,24 @@ class DailyNewsPreviewSource(NewsSourceAdapter):
                         continue
                     if article is None or not self.matches_ticker(article, ticker):
                         continue
-                    if article.published_at and article.published_at < cutoff:
+                    published_at, date_source = self.resolve_published_at(
+                        article=article,
+                        api_date=api_date,
+                        url=url,
+                    )
+                    if published_at is None:
+                        print(f"Skipping article without a reliable publication date: {url}")
+                        continue
+                    article = article.model_copy(
+                        update={
+                            "published_at": published_at,
+                            "raw_metadata": {
+                                **article.raw_metadata,
+                                "published_at_source": date_source,
+                            },
+                        }
+                    )
+                    if article.published_at < cutoff:
                         continue
                     article.raw_metadata["daily_news_listing_tickers"] = [ticker]
                     article.raw_metadata["discovered_via"] = "daily_news_wordpress_search"

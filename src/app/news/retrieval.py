@@ -92,6 +92,24 @@ class PersistentChromaNewsVectorIndex(ChromaNewsVectorIndex):
         )
 
 
+def build_persistent_news_indexer(
+    *, path: str, collection_name: str
+) -> NewsRetrievalIndexer | None:
+    """Build the optional persistent index without blocking ingestion startup."""
+    try:
+        return NewsRetrievalIndexer(
+            PersistentChromaNewsVectorIndex(
+                path=path,
+                collection_name=collection_name,
+            )
+        )
+    except (ImportError, RuntimeError, OSError) as exc:
+        import logging
+
+        logging.getLogger(__name__).warning("News vector indexing disabled: %s", exc)
+        return None
+
+
 class InMemoryNewsVectorIndex:
     """Deterministic test/development index with Chroma-like upsert semantics."""
 

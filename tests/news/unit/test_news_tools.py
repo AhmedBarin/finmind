@@ -14,6 +14,7 @@ from app.agents.news_agent.schemas import (
 )
 from app.agents.news_agent.tools import NewsAgentTools
 from app.news.service import NewsService
+from app.news.tool_repository import NewsToolRepository, ToolArticleRow
 
 
 def test_search_contract_is_bounded_and_normalizes_filters():
@@ -72,3 +73,22 @@ def test_tool_data_never_exposes_full_article_body():
     data = NewsService._tool_data([row])
     assert data.articles[0].snippet == "Title"
     assert "PRIVATE BODY" not in data.model_dump_json()
+
+
+def test_search_relevance_prefers_title_match_over_body_match():
+    source = SimpleNamespace(name="Example", source_type="news")
+    title_match = ToolArticleRow(
+        article=SimpleNamespace(
+            id=uuid4(), title_original="CIB reports strong revenue", body_excerpt="Market update",
+            body_cleaned="Market update", published_at=None,
+        ),
+        source=source, links=(), company_tickers=(), analysis=None,
+    )
+    body_match = ToolArticleRow(
+        article=SimpleNamespace(
+            id=uuid4(), title_original="Egypt market update", body_excerpt="CIB was mentioned",
+            body_cleaned="CIB was mentioned", published_at=None,
+        ),
+        source=source, links=(), company_tickers=(), analysis=None,
+    )
+    assert NewsToolRepository._relevance_score(title_match, "CIB") > NewsToolRepository._relevance_score(body_match, "CIB")

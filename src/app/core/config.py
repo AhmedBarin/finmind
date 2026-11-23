@@ -6,6 +6,8 @@ class Settings(BaseSettings):
     database_url: str
     groq_api_key: SecretStr | None = None
     news_analysis_model: str | None = None
+    news_agent_api_token: SecretStr | None = None
+    news_agent_rate_limit_per_minute: int = 30
     news_vector_store_path: str = "./data/chroma"
     news_vector_collection: str = "finmind_news"
 

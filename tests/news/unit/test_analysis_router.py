@@ -5,6 +5,7 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 
 from app.core.dependencies import get_db_session, get_news_analysis_service
+from app.core.security import require_news_agent_auth
 from app.main import app
 from app.news.groq_client import GroqAnalysisError
 
@@ -76,6 +77,7 @@ def test_analyze_article_endpoint_returns_persisted_analysis_and_commits():
 
     app.dependency_overrides[get_db_session] = override_session
     app.dependency_overrides[get_news_analysis_service] = lambda: service
+    app.dependency_overrides[require_news_agent_auth] = lambda: "test-client"
     try:
         response = TestClient(app).post(
             f"/news/articles/{article_id}/analysis?company_id={company_id}"
@@ -100,6 +102,7 @@ def test_analyze_article_endpoint_maps_groq_failure_to_bad_gateway():
 
     app.dependency_overrides[get_db_session] = override_session
     app.dependency_overrides[get_news_analysis_service] = lambda: service
+    app.dependency_overrides[require_news_agent_auth] = lambda: "test-client"
     try:
         response = TestClient(app).post(f"/news/articles/{article_id}/analysis")
     finally:

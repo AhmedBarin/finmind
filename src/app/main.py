@@ -5,6 +5,8 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 
+from app.api.error_handlers import safe_unhandled_error
+from app.api.middleware import TraceIdMiddleware
 from app.core.config import settings
 from app.db.session import engine
 from app.investor.checkpointer import open_postgres_checkpointer
@@ -52,6 +54,8 @@ app = FastAPI(
     title="FinMind API",
     lifespan=lifespan,
 )
+app.add_middleware(TraceIdMiddleware)
+app.add_exception_handler(Exception, safe_unhandled_error)
 
 app.include_router(news_router)
 app.include_router(
