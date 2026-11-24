@@ -8,6 +8,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import (
     BigInteger,
+    CheckConstraint,
     Date,
     DateTime,
     Numeric,
@@ -65,4 +66,41 @@ class StockPrice(Base):
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False,
+    )
+
+
+class EGXCalendarCoverage(Base):
+    """Date interval explicitly verified against official EGX notices."""
+
+    __tablename__ = "egx_calendar_coverage"
+    __table_args__ = (
+        CheckConstraint(
+            "verified_through >= coverage_start",
+            name="ck_egx_calendar_coverage_verified_range",
+        ),
+        UniqueConstraint("coverage_start", name="uq_egx_calendar_coverage_start"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    coverage_start: Mapped[date] = mapped_column(Date, nullable=False)
+    verified_through: Mapped[date] = mapped_column(Date, nullable=False)
+    verification_reference_url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    verified_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class EGXMarketHoliday(Base):
+    """An officially announced EGX closure date with its primary reference."""
+
+    __tablename__ = "egx_market_holidays"
+
+    holiday_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    holiday_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    announcement_url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    announcement_published_at: Mapped[date | None] = mapped_column(Date)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
