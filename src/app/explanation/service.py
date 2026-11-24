@@ -15,7 +15,6 @@ from app.explanation.context_builder import ContextBuilder
 from app.explanation.evidence import NewsEvidenceRetriever, build_evidence_query
 from app.explanation.graph import build_explanation_graph, run_explanation_graph
 from app.explanation.interfaces import EvidenceRetriever
-from app.explanation.memory import build_memory
 from app.explanation.schemas import (
     AlertExplanationRequest,
     DataAvailability,
@@ -52,8 +51,21 @@ class PreparedExplanationService:
         self.graph = build_explanation_graph(
             generator=generator,
             output_model=ExplanationResponse,
-            checkpointer=checkpointer or build_memory(),
+            checkpointer=checkpointer,
             max_retries=1,
+        )
+        # A persistent checkpointer is used only for real conversation
+        # threads. One-shot recommendation/alert explanations stay stateless
+        # and do not create an unbounded checkpoint per request.
+        self.stateless_graph = (
+            build_explanation_graph(
+                generator=generator,
+                output_model=ExplanationResponse,
+                checkpointer=None,
+                max_retries=1,
+            )
+            if checkpointer is not None
+            else self.graph
         )
 
     async def explain_recommendation(
@@ -136,12 +148,12 @@ class PreparedExplanationService:
             "context": context.rendered,
             "evidence_status": evidence.status.value,
         }
-        effective_thread_id = thread_id or str(uuid4())
+        graph = self.graph if thread_id else self.stateless_graph
         try:
             result = await run_explanation_graph(
-                self.graph,
+                graph,
                 payload=payload,
-                thread_id=effective_thread_id,
+                thread_id=thread_id,
             )
         except Exception:
             return self._fallback(adapted, status="unavailable")
