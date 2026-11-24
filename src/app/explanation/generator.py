@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import os
 from typing import TypeVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from app.explanation.interfaces import LLMClient
 from app.explanation.prompts import ExplanationPromptBuilder
@@ -18,13 +17,35 @@ ModelT = TypeVar("ModelT", bound=BaseModel)
 class StructuredGenerationError(RuntimeError):
     """Raised when a provider cannot produce the requested structured output."""
 
+    code = "generation_error"
+
+    def __init__(self, message: str, *, cause: Exception | None = None) -> None:
+        super().__init__(message)
+        self.cause = cause
+
+
+class StructuredOutputError(StructuredGenerationError):
+    code = "invalid_structured_output"
+
+
+class LLMProviderError(StructuredGenerationError):
+    code = "llm_provider_error"
+
 
 class GroqLLMClient:
     """Small LangChain-Groq adapter kept behind the shared LLM protocol."""
 
     def __init__(self, *, model_name: str, api_key: str | None = None, temperature: float = 0.0) -> None:
         self.model_name = model_name
-        self.api_key = api_key or os.getenv("GROQ_API_KEY")
+        if api_key is None:
+            from app.core.config import settings
+
+            api_key = (
+                settings.groq_api_key.get_secret_value()
+                if settings.groq_api_key is not None
+                else None
+            )
+        self.api_key = api_key
         self.temperature = temperature
 
     async def generate_structured(
@@ -38,10 +59,10 @@ class GroqLLMClient:
         try:
             from langchain_groq import ChatGroq
         except ImportError as exc:
-            raise StructuredGenerationError("LangChain Groq is not installed.") from exc
+            raise LLMProviderError("LangChain Groq is not installed.", cause=exc) from exc
 
         if not self.api_key:
-            raise StructuredGenerationError("GROQ_API_KEY is not configured.")
+            raise LLMProviderError("Groq API key is not configured.")
         try:
             model = ChatGroq(
                 model=model_name or self.model_name,
@@ -52,8 +73,12 @@ class GroqLLMClient:
                 [("system", system_prompt), ("user", user_prompt)]
             )
             return result if isinstance(result, output_model) else output_model.model_validate(result)
+        except ValidationError as exc:
+            raise StructuredOutputError(
+                "The LLM returned invalid structured output.", cause=exc
+            ) from exc
         except Exception as exc:
-            raise StructuredGenerationError("The LLM returned invalid structured output.") from exc
+            raise LLMProviderError("The LLM provider request failed.", cause=exc) from exc
 
 
 class StructuredGenerator:
