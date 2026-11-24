@@ -8,7 +8,7 @@ from typing import Any
 from langgraph.graph import END, START, StateGraph
 
 from app.explanation.generator import StructuredGenerationError, StructuredGenerator
-from app.explanation.memory import ExplanationState, build_memory, thread_config
+from app.explanation.memory import ExplanationState, thread_config
 from app.explanation.schemas import ExplanationLanguage, ExplanationMode
 
 
@@ -23,7 +23,6 @@ def build_explanation_graph(
 
     if max_retries < 0 or max_retries > 2:
         raise ValueError("max_retries must be between 0 and 2")
-    checkpointer = checkpointer or build_memory()
     graph = StateGraph(ExplanationState)
 
     def validate_input(state: ExplanationState) -> dict[str, Any]:
@@ -40,19 +39,25 @@ def build_explanation_graph(
         return {"mode": state["mode"]}
 
     def load_memory(state: ExplanationState) -> dict[str, Any]:
-        return {"memory_loaded": True}
+        previous = state.get("final_output") or {}
+        return {"memory_loaded": bool(previous), "memory_context": previous}
 
-    def build_context(state: ExplanationState) -> dict[str, Any]:
-        payload = state.get("input_payload", {})
+    def reset_run_state(state: ExplanationState) -> dict[str, Any]:
+        """Clear transient fields after loading the previous thread context."""
         return {
-            "context": payload.get("context")
-            or json.dumps(payload, ensure_ascii=False, sort_keys=True)
+            "retry_count": 0,
+            "validation_errors": [],
+            "draft_output": {},
+            "final_output": {},
         }
 
+    def build_context(state: ExplanationState) -> dict[str, Any]:
+        payload = dict(state.get("input_payload") or {})
+        if state.get("memory_context"):
+            payload["previous_context"] = state["memory_context"]
+        return {"context": json.dumps(payload, ensure_ascii=False, sort_keys=True)}
+
     async def generate_output(state: ExplanationState) -> dict[str, Any]:
-        errors = state.get("validation_errors", [])
-        if errors and state.get("retry_count", 0) == 0:
-            return {"final_output": {"status": "unavailable", "errors": errors}}
         payload = state.get("input_payload", {})
         language = ExplanationLanguage(payload.get("language", "ar"))
         try:
@@ -65,7 +70,9 @@ def build_explanation_graph(
         except (StructuredGenerationError, ValueError) as exc:
             return {
                 "draft_output": {},
-                "validation_errors": [str(exc)],
+                "validation_errors": [
+                    f"{getattr(exc, 'code', 'generation_error')}: {exc}"
+                ],
                 "retry_count": state.get("retry_count", 0) + 1,
             }
         return {
@@ -83,7 +90,7 @@ def build_explanation_graph(
         return "save"
 
     def retry_output(state: ExplanationState) -> dict[str, Any]:
-        return {"retry_count": state.get("retry_count", 0) + 1, "validation_errors": []}
+        return {"validation_errors": [], "draft_output": {}}
 
     def safe_fallback(state: ExplanationState) -> dict[str, Any]:
         return {
@@ -96,18 +103,27 @@ def build_explanation_graph(
     def save_output(state: ExplanationState) -> dict[str, Any]:
         return {"final_output": state.get("draft_output", {}), "status": "ok"}
 
+    def route_after_validation(state: ExplanationState) -> str:
+        return "fallback" if state.get("validation_errors") else "continue"
+
     graph.add_node("validate_input", validate_input)
     graph.add_node("detect_mode", detect_mode)
     graph.add_node("load_memory", load_memory)
+    graph.add_node("reset_run_state", reset_run_state)
     graph.add_node("build_context", build_context)
     graph.add_node("generate_output", generate_output)
     graph.add_node("retry_output", retry_output)
     graph.add_node("safe_fallback", safe_fallback)
     graph.add_node("save_output", save_output)
     graph.add_edge(START, "validate_input")
-    graph.add_edge("validate_input", "detect_mode")
+    graph.add_conditional_edges(
+        "validate_input",
+        route_after_validation,
+        {"fallback": "safe_fallback", "continue": "detect_mode"},
+    )
     graph.add_edge("detect_mode", "load_memory")
-    graph.add_edge("load_memory", "build_context")
+    graph.add_edge("load_memory", "reset_run_state")
+    graph.add_edge("reset_run_state", "build_context")
     graph.add_edge("build_context", "generate_output")
     graph.add_conditional_edges(
         "generate_output",
@@ -120,10 +136,14 @@ def build_explanation_graph(
     return graph.compile(checkpointer=checkpointer)
 
 
-async def run_explanation_graph(graph, *, payload: dict[str, Any], thread_id: str) -> dict[str, Any]:
+async def run_explanation_graph(
+    graph, *, payload: dict[str, Any], thread_id: str | None = None
+) -> dict[str, Any]:
     """Run a compiled graph with a bounded recursion limit."""
+    config: dict[str, Any] = {"recursion_limit": 20}
+    if thread_id is not None:
+        config.update(thread_config(thread_id))
     result = await graph.ainvoke(
-        {"input_payload": payload, "mode": payload.get("mode", "")},
-        config={**thread_config(thread_id), "recursion_limit": 20},
+        {"input_payload": payload, "mode": payload.get("mode", "")}, config=config
     )
     return result

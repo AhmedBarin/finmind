@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, TypedDict
 
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.memory import InMemorySaver
 
 
 class ExplanationState(TypedDict, total=False):
@@ -20,11 +20,17 @@ class ExplanationState(TypedDict, total=False):
     retry_count: int
     status: str
     memory_loaded: bool
+    memory_context: dict[str, Any]
 
 
-def build_memory() -> MemorySaver:
-    """Return an in-process checkpointer suitable for the MVP and tests."""
-    return MemorySaver()
+def build_memory() -> InMemorySaver:
+    """Return an in-process checkpointer for unit tests only.
+
+    Production callers must inject the shared ``AsyncPostgresSaver`` used by
+    the application lifespan instead of creating an unbounded process-local
+    memory store.
+    """
+    return InMemorySaver()
 
 
 def thread_config(thread_id: str) -> dict[str, dict[str, str]]:
