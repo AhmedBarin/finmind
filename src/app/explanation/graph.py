@@ -94,6 +94,9 @@ def build_explanation_graph(
 
     def safe_fallback(state: ExplanationState) -> dict[str, Any]:
         return {
+            "retry_count": 0,
+            "validation_errors": [],
+            "draft_output": {},
             "final_output": {
                 "status": "unavailable",
                 "limitations": ["A validated explanation could not be generated."],
