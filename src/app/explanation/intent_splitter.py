@@ -27,8 +27,10 @@ class IntentSplit:
 _RECOMMENDATION_RE = re.compile(
     r"(?<![a-z])(?:buy|buying|bought|sell|selling|sold|hold|holding|avoid|purchase|"
     r"recommend|recommendation)(?![a-z])"
-    r"|\b(?:should\s+i|would\s+you\s+recommend|is\s+it\s+better\s+to)\b"
-    r"|(?:شراء|اشتر|اشتري|اشترى|بيع|بع|يبيع|تبيع|احتفظ|تجنب|انصح|اوصي|توصية)",
+    r"|\b(?:should\s+i|can\s+i\s+enter|should\s+i\s+enter|"
+    r"would\s+you\s+recommend|is\s+it\s+better\s+to)\b"
+    r"|(?:شراء|اشتر|اشتري|اشترى|بيع|بع|يبيع|تبيع|احتفظ|تجنب|انصح|اوصي|توصية|"
+    r"هل\s+يمكنني\s+الدخول|هل\s+استطيع\s+الدخول|ادخل|أدخل)",
     re.IGNORECASE,
 )
 _DESCRIPTIVE_RE = re.compile(

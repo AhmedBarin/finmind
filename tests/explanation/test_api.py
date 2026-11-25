@@ -31,18 +31,18 @@ OTHER_USER_ID = UUID("00000000-0000-0000-0000-000000000222")
 
 
 class FakeCoreService:
-    async def explain_recommendation(self, body, *, user_id):
+    async def explain_recommendation(self, body, *, user_id, session):
         return _core_response("recommendation", body.recommendation.decision)
 
-    async def explain_alert(self, body, *, user_id):
+    async def explain_alert(self, body, *, user_id, session):
         return _core_response("alert")
 
-    async def explain_follow_up(self, body, *, user_id):
+    async def explain_follow_up(self, body, *, user_id, session):
         return _core_response("follow_up")
 
 
 class FailingCoreService(FakeCoreService):
-    async def explain_follow_up(self, body, *, user_id):
+    async def explain_follow_up(self, body, *, user_id, session):
         raise RuntimeError("sensitive internal detail")
 
 

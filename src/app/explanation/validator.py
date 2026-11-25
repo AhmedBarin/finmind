@@ -17,6 +17,8 @@ from app.explanation.constants import (
     RECOMMENDATION_TERMS,
 )
 from app.explanation.schemas import ExplanationLanguage, StockQAFact, StockQARequest
+from app.explanation.schemas import EvidenceResult, ExplanationMode
+from app.recommendation.schemas import RecommendationDecision
 
 
 MAX_ANSWER_CHARS = 4000
@@ -133,12 +135,25 @@ def _numeric_claims(value: str) -> set[str]:
     return claims
 
 
+def _fact_label_is_grounded(label: str, source_text: str) -> bool:
+    normalized_label = _ISO_DATE_RE.sub(" ", _normalize_text(label))
+    normalized_label = re.sub(
+        r"\b(?:on|as|of|at|for|the|a|an|value|reading|indicator|قيمة|قراءة|المؤشر|مؤشر|المسجلة)\b",
+        " ",
+        normalized_label,
+    )
+    tokens = re.findall(r"[a-z][a-z0-9]*|[\u0621-\u064a]+", normalized_label)
+    normalized_source = re.sub(
+        r"[_\-]+", " ", _normalize_text(source_text)
+    )
+    return bool(tokens) and all(
+        re.search(rf"(?<!\w){re.escape(token)}(?!\w)", normalized_source)
+        for token in tokens
+    )
+
+
 def _serialize_tool_results(tool_results: Mapping[str, Sequence[Mapping[str, Any]]]) -> str:
     return json.dumps(tool_results, ensure_ascii=False, sort_keys=True, default=str)
-
-
-def _normalize_grounding_text(value: str) -> str:
-    return re.sub(r"\s+", " ", unicodedata.normalize("NFKC", value)).strip().casefold()
 
 
 def validate_stock_qa_draft(
@@ -166,6 +181,36 @@ def validate_stock_qa_draft(
 
     if any(fact.source_tool not in tool_results for fact in draft.facts):
         errors.append("fact_source_tool_not_used")
+
+    requested_definitions = [
+        str(result["definition"].get("name"))
+        for result in tool_results.get("get_indicator_glossary", ())
+        if isinstance(result.get("definition"), Mapping)
+        and result["definition"].get("name")
+    ]
+    fact_labels = [fact.label.casefold() for fact in draft.facts]
+    if any(
+        not any(name.casefold() in label or label in name.casefold() for label in fact_labels)
+        for name in requested_definitions
+    ):
+        errors.append("requested_glossary_definition_missing")
+
+    asks_to_apply_indicators = re.search(
+        r"\b(?:important|useful|relevant|here|for this stock)\b|مهم|مفيد|هنا|للسهم",
+        request.question,
+        re.IGNORECASE,
+    )
+    if asks_to_apply_indicators:
+        market_tool_names = {
+            name
+            for name, results in tool_results.items()
+            if name != "get_indicator_glossary"
+            and any(result.get("payload") is not None for result in results)
+        }
+        if market_tool_names and not any(
+            fact.source_tool in market_tool_names for fact in draft.facts
+        ):
+            errors.append("current_snapshot_facts_missing")
 
     requires_market_freshness = any(
         name != "get_indicator_glossary"
@@ -198,9 +243,11 @@ def validate_stock_qa_draft(
     for fact in draft.facts:
         sources = tool_results.get(fact.source_tool, ())
         source_text = _serialize_tool_results({fact.source_tool: sources})
+        if not _fact_label_is_grounded(fact.label, source_text):
+            errors.append("fact_label_not_grounded_in_source_tool")
         source_claims = _numeric_claims(source_text)
-        value_text = _normalize_grounding_text(fact.value)
-        value_grounded = value_text in _normalize_grounding_text(source_text)
+        value_text = _normalize_text(fact.value)
+        value_grounded = value_text in _normalize_text(source_text)
         numeric_grounded = _numeric_claims(fact.value).issubset(source_claims)
         if not value_grounded and not numeric_grounded:
             errors.append("fact_not_grounded_in_source_tool")
@@ -208,5 +255,46 @@ def validate_stock_qa_draft(
 
     if len(draft.answer) > MAX_ANSWER_CHARS:
         errors.append("answer_too_long")
+    return sorted(set(errors))
+
+
+def validate_prepared_explanation_draft(
+    draft: Any,
+    *,
+    mode: ExplanationMode,
+    language: ExplanationLanguage,
+    input_payload: Mapping[str, Any],
+    evidence: EvidenceResult,
+    expected_decision: RecommendationDecision | None = None,
+) -> list[str]:
+    """Validate prepared-mode citations, disclaimers, decision, and numbers."""
+    errors: list[str] = []
+    disclaimer = (
+        ARABIC_RISK_DISCLAIMER
+        if language is ExplanationLanguage.ARABIC
+        else ENGLISH_RISK_DISCLAIMER
+    )
+    if disclaimer not in draft.disclaimer:
+        errors.append("required_disclaimer_missing")
+
+    if mode is ExplanationMode.RECOMMENDATION:
+        if expected_decision is None or draft.decision != expected_decision:
+            errors.append("recommendation_decision_changed")
+    elif draft.decision is not None:
+        errors.append("unexpected_decision_field")
+
+    valid_citations = {item.evidence_id for item in evidence.items}
+    if any(citation_id not in valid_citations for citation_id in draft.citation_ids):
+        errors.append("fabricated_citation")
+
+    source_text = _serialize_tool_results(
+        {
+            "input": [input_payload],
+            "evidence": [item.model_dump(mode="json") for item in evidence.items],
+        }
+    )
+    claims_text = " ".join([draft.summary, draft.explanation, *draft.facts, *draft.limitations])
+    if not _numeric_claims(claims_text).issubset(_numeric_claims(source_text)):
+        errors.append("unsupported_numeric_claim")
     return sorted(set(errors))
 

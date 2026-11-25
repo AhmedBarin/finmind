@@ -69,7 +69,11 @@ async def test_groq_structured_client_rejects_invalid_model_output():
 
 
 def test_groq_client_requires_explanation_specific_configuration():
-    config = Settings(database_url="postgresql+asyncpg://localhost/test", groq_api_key="key")
+    config = Settings(
+        database_url="postgresql+asyncpg://localhost/test",
+        groq_api_key="key",
+        explanation_model=None,
+    )
 
     with pytest.raises(StructuredLLMError, match="EXPLANATION_MODEL"):
         GroqStructuredLLMClient.from_settings(config)

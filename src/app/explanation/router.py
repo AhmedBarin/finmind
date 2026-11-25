@@ -47,15 +47,27 @@ class ExplanationCoreService(Protocol):
     """Member A service contract consumed by the shared typed API routes."""
 
     async def explain_recommendation(
-        self, request: RecommendationExplanationRequest, *, user_id: UUID
+        self,
+        request: RecommendationExplanationRequest,
+        *,
+        user_id: UUID,
+        session: AsyncSession,
     ) -> ExplanationResponse: ...
 
     async def explain_alert(
-        self, request: AlertExplanationRequest, *, user_id: UUID
+        self,
+        request: AlertExplanationRequest,
+        *,
+        user_id: UUID,
+        session: AsyncSession,
     ) -> ExplanationResponse: ...
 
     async def explain_follow_up(
-        self, request: FollowUpRequest, *, user_id: UUID
+        self,
+        request: FollowUpRequest,
+        *,
+        user_id: UUID,
+        session: AsyncSession,
     ) -> ExplanationResponse: ...
 
 
@@ -101,6 +113,12 @@ class QuestionRequest(BaseModel):
         ):
             raise ValueError("tickers must be non-empty and unique")
         self.tickers = normalized
+        if "language" not in self.model_fields_set:
+            self.language = (
+                ExplanationLanguage.ARABIC
+                if re.search(r"[\u0600-\u06ff]", self.question)
+                else ExplanationLanguage.ENGLISH
+            )
         return self
 
 
@@ -129,9 +147,10 @@ async def _run_stock_qa(
 async def explain_recommendation(
     body: RecommendationExplanationRequest,
     user_id: UserId,
+    session: SessionDep,
     service: CoreService,
 ) -> ExplanationResponse:
-    result = await service.explain_recommendation(body, user_id=user_id)
+    result = await service.explain_recommendation(body, user_id=user_id, session=session)
     if result.explanation_type != "recommendation":
         raise HTTPException(status_code=502, detail="Explanation service returned the wrong response type")
     if result.decision != body.recommendation.decision:
@@ -143,11 +162,12 @@ async def explain_recommendation(
 async def explain_alert(
     body: AlertExplanationRequest,
     user_id: UserId,
+    session: SessionDep,
     service: CoreService,
 ) -> ExplanationResponse:
     if body.alert.user_id != user_id:
         raise HTTPException(status_code=404, detail="Alert not found")
-    result = await service.explain_alert(body, user_id=user_id)
+    result = await service.explain_alert(body, user_id=user_id, session=session)
     if result.explanation_type != "alert":
         raise HTTPException(status_code=502, detail="Explanation service returned the wrong response type")
     return result
@@ -157,9 +177,10 @@ async def explain_alert(
 async def explain_follow_up(
     body: FollowUpRequest,
     user_id: UserId,
+    session: SessionDep,
     service: CoreService,
 ) -> ExplanationResponse:
-    result = await service.explain_follow_up(body, user_id=user_id)
+    result = await service.explain_follow_up(body, user_id=user_id, session=session)
     if result.explanation_type != "follow_up":
         raise HTTPException(status_code=502, detail="Explanation service returned the wrong response type")
     return result

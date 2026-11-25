@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+import re
 from collections.abc import Mapping, Sequence
 from datetime import UTC, date, datetime, time
 from typing import Any, Literal, TypedDict
@@ -15,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.explanation.constants import ARABIC_RISK_DISCLAIMER, ENGLISH_RISK_DISCLAIMER
 from app.explanation.fallback import build_safe_stock_qa_fallback
+from app.explanation.glossary import list_indicator_definitions
 from app.explanation.interfaces import ExplanationTool, LLMClient
 from app.explanation.schemas import (
     DataAvailability,
@@ -41,6 +43,18 @@ TOOL_TIMEOUT_SECONDS = 5.0
 LLM_TIMEOUT_SECONDS = 20.0
 MAX_GRAPH_STEPS = 12
 _CAIRO = ZoneInfo("Africa/Cairo")
+_ISO_DATE_IN_QUESTION = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
+_DEFINITION_WORDS = re.compile(
+    r"\b(?:what\s+is|what\s+do|what\s+does|define|definition|meaning|explain)\b|"
+    r"ما\s+معنى|ما\s+هو|ما\s+هي|اشرح|عرّف|يعني",
+    re.IGNORECASE,
+)
+_STATE_WORDS = re.compile(
+    r"\b(?:stock|share|state|status|trend|trending|momentum|volume|indicator|indicators|"
+    r"current|value|reading|rsi|macd|adx|atr|sma|regime)\b|"
+    r"السهم|سهم|حالة|اتجاه|ترند|زخم|حجم|مؤشر|قراءة|قيمة|صاعد|هابط|حالي",
+    re.IGNORECASE,
+)
 
 
 class PlannedToolCall(BaseModel):
@@ -261,6 +275,7 @@ def _freshness_seconds(data_date: date | None, *, now: datetime) -> int | None:
 def _response_limitations(
     draft: StockQADraft,
     tool_results: Mapping[str, Sequence[Mapping[str, Any]]],
+    language: ExplanationLanguage,
 ) -> list[str]:
     combined = list(draft.limitations)
     for values in tool_results.values():
@@ -275,7 +290,55 @@ def _response_limitations(
                 combined.append("تعذر التحقق من حداثة بعض البيانات أو اكتمالها.")
             elif status == "not_found":
                 combined.append("لم تتوفر بيانات لبعض أجزاء السؤال.")
-    return list(dict.fromkeys(combined))[:20]
+    localized = [_localize_limitation(value, language) for value in combined]
+    return list(dict.fromkeys(localized))[:20]
+
+
+def _localize_limitation(value: str, language: ExplanationLanguage) -> str:
+    if language is ExplanationLanguage.ARABIC:
+        return value
+    translations = (
+        (
+            "تعذر التحقق من حداثة البيانات: تغطية تقويم عطلات البورصة المصرية غير مكتملة لهذه الفترة.",
+            "Data freshness could not be verified because official EGX holiday-calendar coverage is incomplete for this period.",
+        ),
+        (
+            "تغطية تقويم عطلات البورصة غير مكتملة لهذه الفترة.",
+            "Official EGX holiday-calendar coverage is incomplete for this period.",
+        ),
+        (
+            "محرك التحليل الفني سجّل اللقطة كقديمة؛ لم يؤكد تقويم العطلات الرسمي هذا التصنيف الحالي.",
+            "The Technical Analysis Engine marked this snapshot as stale; the official holiday calendar could not confirm that classification.",
+        ),
+        (
+            "تعذر التحقق من حداثة بعض البيانات أو اكتمالها.",
+            "Freshness or completeness could not be verified for some data.",
+        ),
+        (
+            "بعض البيانات أقدم من يومي تداول، وقد تكون غير محدثة.",
+            "Some data is more than two trading days old and may be stale.",
+        ),
+        (
+            "البيانات أقدم من الحد المسموح:",
+            "Data exceeds the allowed age:",
+        ),
+        (
+            "لم تتوفر بيانات لبعض أجزاء السؤال.",
+            "Data was unavailable for part of the question.",
+        ),
+        (
+            "المصطلح غير موجود في قاموس المؤشرات المتاح.",
+            "That term is not in the available indicator glossary.",
+        ),
+        (
+            "تعذر تكوين إجابة موثوقة من البيانات المتاحة؛ راجع القيود والبيانات المنظمة.",
+            "A grounded answer could not be generated from the available data; review the limitations and structured facts.",
+        ),
+    )
+    for arabic, english in translations:
+        if arabic in value:
+            return value.replace(arabic, english)
+    return value
 
 
 class StockQAAgent:
@@ -324,6 +387,19 @@ class StockQAAgent:
         return json.dumps(schema, ensure_ascii=False, default=str)
 
     async def _plan_tools(self, request: StockQARequest) -> list[PlannedToolCall]:
+        now = self.clock()
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=UTC)
+        preferred_calls = _preferred_stock_qa_calls(
+            request, as_of_date=now.astimezone(_CAIRO).date()
+        )
+        if preferred_calls is not None:
+            if len(preferred_calls) > min(request.max_tool_calls, MAX_ALLOWED_TOOL_CALLS):
+                raise ValueError("tool call limit exceeded")
+            for call in preferred_calls:
+                _validate_call_arguments(call, request=request, tool=self.tools[call.name])
+            return preferred_calls
+
         plan = await self._generate(
             system_prompt=_PLANNER_SYSTEM,
             user_prompt=json.dumps(
@@ -469,7 +545,7 @@ class StockQAAgent:
             ),
             answer=draft.answer,
             facts=draft.facts,
-            limitations=_response_limitations(draft, tool_results),
+            limitations=_response_limitations(draft, tool_results, request.language),
             disclaimer=disclaimer,
             generated_at=now.astimezone(UTC),
         )
@@ -632,4 +708,59 @@ def build_stock_qa_agent(
 ) -> StockQAAgent:
     """Factory used by the service layer and deterministic tests."""
     return StockQAAgent(llm=llm, tools=tools, **limits)
+
+
+def _preferred_stock_qa_calls(
+    request: StockQARequest,
+    *,
+    as_of_date: date,
+) -> list[PlannedToolCall] | None:
+    """Prefer deterministic tools for direct indicator and stock-state questions."""
+    question = request.question.casefold()
+    definition_request = bool(_DEFINITION_WORDS.search(question))
+    matched_definitions = [
+        definition
+        for definition in list_indicator_definitions()
+        if any(alias.casefold() in question for alias in (definition.name, *definition.aliases))
+    ]
+    if definition_request and matched_definitions:
+        calls = [
+            PlannedToolCall(
+                name="get_indicator_glossary",
+                arguments={"name": definition.name},
+            )
+            for definition in matched_definitions
+        ]
+        if re.search(
+            r"\b(?:current|value|reading|today|now|important|here|useful|condition|state)\b|"
+            r"قيمة|قراءة|الحالي|الآن|هنا|مهم|حالة|يفيد|مفيد|الوضع",
+            question,
+            re.IGNORECASE,
+        ):
+            calls.append(_snapshot_call(request, as_of_date=as_of_date))
+        return calls[: request.max_tool_calls]
+
+    if not matched_definitions and not _STATE_WORDS.search(question):
+        return None
+    if definition_request and not matched_definitions:
+        return None
+    return [_snapshot_call(request, as_of_date=as_of_date)]
+
+
+def _snapshot_call(request: StockQARequest, *, as_of_date: date) -> PlannedToolCall:
+    explicit_date = _ISO_DATE_IN_QUESTION.search(request.question)
+    ticker = request.tickers[0]
+    if explicit_date is not None:
+        return PlannedToolCall(
+            name="get_technical_snapshot",
+            arguments={"ticker": ticker, "snapshot_date": explicit_date.group()},
+        )
+    return PlannedToolCall(
+        name="get_snapshot_history",
+        arguments={
+            "ticker": ticker,
+            "to_date": as_of_date.isoformat(),
+            "limit": 1,
+        },
+    )
 

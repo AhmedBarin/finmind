@@ -27,7 +27,7 @@ class IndicatorDefinition(BaseModel):
 _DEFINITIONS = (
     IndicatorDefinition(
         name="RSI14",
-        aliases=("RSI", "RSI 14", "RELATIVE STRENGTH INDEX"),
+        aliases=("RSI", "RSI 14", "RELATIVE STRENGTH INDEX", "مؤشر القوة النسبية", "القوة النسبية"),
         explanation_ar=(
             "مؤشر الزخم النسبي لفترة 14 وحدة. يقارن متوسط المكاسب بمتوسط الخسائر "
             "ويعرض قراءة بين 0 و100؛ وهو وصف للزخم وليس دليلاً منفرداً على اتجاه السعر."
@@ -58,7 +58,7 @@ _DEFINITIONS = (
     ),
     IndicatorDefinition(
         name="MACD",
-        aliases=("MOVING AVERAGE CONVERGENCE DIVERGENCE",),
+        aliases=("MOVING AVERAGE CONVERGENCE DIVERGENCE", "تقارب وتباعد المتوسطات المتحركة"),
         explanation_ar=(
             "مؤشر يتكون عادةً من الفرق بين متوسطين أسيين للأسعار وخط إشارة، "
             "ويصف تغير الزخم والعلاقة بين المتوسطين."
@@ -95,7 +95,7 @@ _DEFINITIONS = (
     ),
     IndicatorDefinition(
         name="ADX14",
-        aliases=("ADX", "ADX 14", "AVERAGE DIRECTIONAL INDEX"),
+        aliases=("ADX", "ADX 14", "AVERAGE DIRECTIONAL INDEX", "مؤشر متوسط الاتجاه"),
         explanation_ar=(
             "مؤشر متوسط الاتجاه لفترة 14 وحدة، ويصف قوة الاتجاه دون تحديد ما إذا "
             "كان صاعداً أم هابطاً."
@@ -131,7 +131,7 @@ _DEFINITIONS = (
     ),
     IndicatorDefinition(
         name="Volume Ratio",
-        aliases=("VOLUME RATIO", "VOLUME-RATIO", "VOL RATIO"),
+        aliases=("VOLUME RATIO", "VOLUME-RATIO", "VOL RATIO", "نسبة حجم التداول"),
         explanation_ar=(
             "نسبة حجم التداول إلى مرجع الحجم الذي يستخدمه النظام، مثل متوسط حجم "
             "فترة سابقة؛ وتوضح كيف يقارن الحجم الحالي بذلك المرجع."
@@ -140,6 +140,44 @@ _DEFINITIONS = (
             "Trading volume divided by the reference volume used by the system, "
             "such as a prior-period average; it shows how current volume compares "
             "with that reference."
+        ),
+    ),
+    IndicatorDefinition(
+        name="Trading Volume",
+        aliases=("VOLUME", "SHARES TRADED", "حجم التداول", "حجم التداول الفعلي"),
+        explanation_ar=(
+            "حجم التداول هو عدد الأسهم التي جرى تداولها خلال الفترة. يصف مستوى "
+            "النشاط في السهم، لكنه لا يحدد اتجاه السعر بمفرده."
+        ),
+        explanation_en=(
+            "Trading volume is the number of shares traded during a period. It "
+            "describes activity in the stock, but does not determine price direction on its own."
+        ),
+    ),
+    IndicatorDefinition(
+        name="Momentum",
+        aliases=("MOMENTUM SCORE", "الزخم", "مؤشر الزخم"),
+        explanation_ar=(
+            "عائلة الزخم تلخص مؤشرات مثل RSI وMACD. تصف سلوك الحركة المحسوبة "
+            "ولا تحدد وحدها اتجاه السعر أو ما ينبغي فعله بالسهم."
+        ),
+        explanation_en=(
+            "The momentum family summarizes signals such as RSI and MACD. It "
+            "describes calculated price behavior and does not alone determine "
+            "price direction or what action to take."
+        ),
+    ),
+    IndicatorDefinition(
+        name="Trend Regime",
+        aliases=("TREND", "TRENDING", "MARKET REGIME", "حالة الاتجاه", "حالة السوق", "ترند"),
+        explanation_ar=(
+            "تصنيف فني لحالة الحركة مثل اتجاه أو انتقال أو نطاق. وصف «اتجاه» "
+            "يقيس قوة الاتجاه ولا يحدد وحده إن كان السعر صاعداً أم هابطاً."
+        ),
+        explanation_en=(
+            "A technical classification such as trending, transition, or ranging. "
+            "A trending regime describes trend strength and does not by itself "
+            "say whether price is moving upward or downward."
         ),
     ),
     IndicatorDefinition(

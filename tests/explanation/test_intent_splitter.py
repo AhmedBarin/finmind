@@ -11,6 +11,8 @@ from app.explanation.intent_splitter import QuestionIntent, split_question_inten
         ("What is the RSI value?", QuestionIntent.DESCRIPTIVE),
         ("ما قيمة مؤشر RSI؟", QuestionIntent.DESCRIPTIVE),
         ("Should I buy COMI?", QuestionIntent.RECOMMENDATION),
+        ("Can I enter TMGH now?", QuestionIntent.RECOMMENDATION),
+        ("كيف يبدو سلوك السهم، وهل يمكنني الدخول؟", QuestionIntent.MIXED),
         ("هل أشتري سهم COMI؟", QuestionIntent.RECOMMENDATION),
         ("Explain RSI and should I buy COMI?", QuestionIntent.MIXED),
         ("ما قيمة RSI، وهل أشتري السهم؟", QuestionIntent.MIXED),

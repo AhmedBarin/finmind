@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.explanation.constants import ARABIC_RISK_DISCLAIMER
+from app.explanation.constants import ARABIC_RISK_DISCLAIMER, ENGLISH_RISK_DISCLAIMER
 from app.explanation.schemas import StockQAFact, StockQARequest
 from app.explanation.validator import (
     StockQADraft,
@@ -118,3 +118,41 @@ def test_missing_data_date_or_freshness_is_explicitly_invalid() -> None:
 
     assert "data_date_missing" in errors
     assert "freshness_missing" in errors
+
+
+def test_combined_definition_and_relevance_question_requires_all_grounding() -> None:
+    request = StockQARequest(
+        question="Are RSI and momentum important here?",
+        tickers=["COMI"],
+        language="en",
+    )
+    tools = {
+        "get_indicator_glossary": [
+            {"definition": {"name": "RSI14"}},
+            {"definition": {"name": "Momentum"}},
+        ],
+        "get_technical_snapshot": [
+            {
+                "status": "partial",
+                "data_date": "2026-11-24",
+                "freshness_status": "unavailable",
+                "payload": {"ticker": "COMI", "indicators": {"rsi14": 54.2}},
+            }
+        ],
+    }
+    draft = _valid_draft(
+        answer="RSI14 is a momentum measure.",
+        facts=[
+            StockQAFact(
+                label="RSI14",
+                value="54.2",
+                source_tool="get_indicator_glossary",
+            )
+        ],
+        disclaimer=ENGLISH_RISK_DISCLAIMER,
+    )
+
+    errors = validate_stock_qa_draft(draft, request=request, tool_results=tools)
+
+    assert "requested_glossary_definition_missing" in errors
+    assert "current_snapshot_facts_missing" in errors
