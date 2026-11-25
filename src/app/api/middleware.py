@@ -45,6 +45,21 @@ def check_news_agent_rate_limit(request: Request) -> None:
     limiter.check(client_key)
 
 
+def check_explanation_rate_limit(request: Request) -> None:
+    """Apply the process-local limit configured for Explanation Agent routes."""
+    limiter = getattr(request.app.state, "explanation_rate_limiter", None)
+    if limiter is None:
+        limiter = NewsAgentRateLimiter(limit=settings.explanation_rate_limit_per_minute)
+        request.app.state.explanation_rate_limiter = limiter
+    client_key = request.client.host if request.client else "unknown"
+    try:
+        limiter.check(client_key)
+    except HTTPException as exc:
+        if exc.status_code == 429:
+            raise HTTPException(status_code=429, detail="Explanation Agent rate limit exceeded") from exc
+        raise
+
+
 def validate_agent_message(message: str) -> str:
     value = message.strip()
     if not value:

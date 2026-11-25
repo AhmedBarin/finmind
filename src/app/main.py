@@ -9,6 +9,7 @@ from app.api.error_handlers import safe_unhandled_error
 from app.api.middleware import TraceIdMiddleware
 from app.core.config import settings
 from app.db.session import engine
+from app.explanation.router import router as explanation_router
 from app.investor.checkpointer import open_postgres_checkpointer
 from app.investor.graph import build_interview_graph
 from app.investor.llm_extraction import build_default_extractor
@@ -66,6 +67,7 @@ app.include_router(
 app.include_router(technical_router)
 app.include_router(investor_router)
 app.include_router(recommendation_router)
+app.include_router(explanation_router)
 
 
 _INVESTOR_CHAT_PAGE = Path(__file__).parent / "investor" / "static" / "chat.html"
