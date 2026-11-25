@@ -115,13 +115,20 @@ def adapt_follow_up(request: FollowUpRequest) -> AdaptedInput:
         limitations.append("No prior explanation context was supplied.")
         status = DataAvailability.PARTIAL
 
-    raw_ticker = request.prior_context.get("ticker")
+    authorized_subject = request.prior_context.get("authorized_subject")
+    authorized_subject = authorized_subject if isinstance(authorized_subject, dict) else {}
+    raw_ticker = request.prior_context.get("ticker") or authorized_subject.get("ticker")
     ticker = raw_ticker.strip().upper() if isinstance(raw_ticker, str) and raw_ticker.strip() else None
     if ticker is None:
         limitations.append("The prior context has no ticker.")
         status = DataAvailability.PARTIAL
 
-    raw_date = request.prior_context.get("data_date") or request.prior_context.get("trading_date")
+    raw_date = (
+        request.prior_context.get("data_date")
+        or request.prior_context.get("trading_date")
+        or authorized_subject.get("data_date")
+        or authorized_subject.get("trading_date")
+    )
     as_of = raw_date
     if isinstance(raw_date, str):
         try:

@@ -52,6 +52,19 @@ def test_stock_qa_request_normalizes_and_deduplicates_tickers() -> None:
 
     assert request.tickers == ["COMI", "SWDY"]
     assert request.max_tool_calls == 5
+    assert request.language.value == "en"
+
+
+def test_stock_qa_language_follows_arabic_or_english_question_unless_explicit() -> None:
+    arabic = StockQARequest(question="ما حالة السهم؟", tickers=["COMI"])
+    english = StockQARequest(question="What is the stock state?", tickers=["COMI"])
+    explicit = StockQARequest(
+        question="What is the stock state?", tickers=["COMI"], language="ar"
+    )
+
+    assert arabic.language.value == "ar"
+    assert english.language.value == "en"
+    assert explicit.language.value == "ar"
 
 
 def test_stock_qa_request_rejects_duplicate_tickers() -> None:

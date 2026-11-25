@@ -9,16 +9,25 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from enum import StrEnum
+import re
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.monitoring.schemas.alerts import AlertResponse
 from app.recommendation.schemas import RecommendationDecision, RecommendationResult
 from app.technical_analysis.schemas import TechnicalSnapshotRead
 
 from app.explanation.constants import EXPLANATION_SCHEMA_VERSION
+
+
+def _infer_explanation_language(question: str) -> ExplanationLanguage:
+    return (
+        ExplanationLanguage.ARABIC
+        if re.search(r"[\u0600-\u06ff]", question)
+        else ExplanationLanguage.ENGLISH
+    )
 
 
 class ExplanationMode(StrEnum):
@@ -117,6 +126,12 @@ class FollowUpRequest(BaseModel):
     language: ExplanationLanguage = ExplanationLanguage.ARABIC
     thread_id: str = Field(min_length=1, max_length=128)
 
+    @model_validator(mode="after")
+    def infer_language_from_question(self) -> "FollowUpRequest":
+        if "language" not in self.model_fields_set:
+            self.language = _infer_explanation_language(self.question)
+        return self
+
 
 class StockQARequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -136,6 +151,12 @@ class StockQARequest(BaseModel):
         if len(set(normalized)) != len(normalized):
             raise ValueError("tickers must be unique")
         return normalized
+
+    @model_validator(mode="after")
+    def infer_language_from_question(self) -> "StockQARequest":
+        if "language" not in self.model_fields_set:
+            self.language = _infer_explanation_language(self.question)
+        return self
 
 
 class ExplanationResponse(BaseModel):

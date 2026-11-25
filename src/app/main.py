@@ -7,8 +7,13 @@ from fastapi.responses import FileResponse
 
 from app.api.error_handlers import safe_unhandled_error
 from app.api.middleware import TraceIdMiddleware
+from app.core.dependencies import get_news_retrieval_tools
 from app.core.config import settings
 from app.db.session import engine
+from app.explanation.evidence import NewsToolsEvidenceBackend
+from app.explanation.llm import GroqStructuredLLMClient
+from app.explanation.router import router as explanation_router
+from app.explanation.service import PreparedExplanationService
 from app.investor.checkpointer import open_postgres_checkpointer
 from app.investor.graph import build_interview_graph
 from app.investor.llm_extraction import build_default_extractor
@@ -40,6 +45,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 num_ctx=settings.investor_llm_num_ctx,
             ),
         )
+        if (
+            settings.groq_api_key is not None
+            and settings.groq_api_key.get_secret_value().strip()
+            and settings.explanation_model is not None
+            and settings.explanation_model.strip()
+        ):
+            app.state.explanation_core_service = PreparedExplanationService(
+                llm=GroqStructuredLLMClient.from_settings(settings),
+                evidence_retriever=NewsToolsEvidenceBackend(get_news_retrieval_tools()),
+                checkpointer=checkpointer,
+            )
+        else:
+            app.state.explanation_core_service = None
         start_scheduler()
         start_monitoring_scheduler()
         try:
@@ -66,6 +84,7 @@ app.include_router(
 app.include_router(technical_router)
 app.include_router(investor_router)
 app.include_router(recommendation_router)
+app.include_router(explanation_router)
 
 
 _INVESTOR_CHAT_PAGE = Path(__file__).parent / "investor" / "static" / "chat.html"
