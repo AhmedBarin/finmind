@@ -8,7 +8,6 @@ from pydantic import BaseModel
 
 from app.explanation.schemas import EvidenceQuery, EvidenceResult
 
-
 ModelT = TypeVar("ModelT", bound=BaseModel)
 
 

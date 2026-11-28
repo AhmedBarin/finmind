@@ -71,7 +71,9 @@ class ContextBuilder:
             "source_name": item.source_name,
             "title": item.title,
             "source_url": item.source_url,
-            "published_at": item.published_at.isoformat() if item.published_at else None,
+            "published_at": item.published_at.isoformat()
+            if item.published_at
+            else None,
             "excerpt": item.excerpt,
             "quote": item.quote,
             "ticker": item.ticker,

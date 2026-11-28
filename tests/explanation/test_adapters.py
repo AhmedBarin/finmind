@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -27,7 +27,9 @@ def recommendation() -> RecommendationResult:
         config_version=EXPLANATION_SCHEMA_VERSION,
         decision=RecommendationDecision.WATCH,
         confidence=ConfidenceLevel.MEDIUM,
-        data_quality=RecommendationDataQuality(price_status="valid", last_price_date=None),
+        data_quality=RecommendationDataQuality(
+            price_status="valid", last_price_date=None
+        ),
     )
 
 
@@ -54,7 +56,7 @@ def alert() -> AlertResponse:
         evidence={"indicator": "rsi14"},
         current_value=75,
         threshold_value=70,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
 
 
@@ -62,8 +64,8 @@ def snapshot(ticker: str = "COMI") -> TechnicalSnapshotRead:
     return TechnicalSnapshotRead(
         id=uuid4(),
         ticker=ticker,
-        date=datetime.now(timezone.utc).date(),
-        calculated_at=datetime.now(timezone.utc),
+        date=datetime.now(UTC).date(),
+        calculated_at=datetime.now(UTC),
         config_version="technical.v1",
         input_hash="hash",
         data_quality_status="valid",
@@ -85,7 +87,9 @@ def test_alert_adapter_requires_matching_snapshot_ticker() -> None:
 
 
 def test_alert_adapter_flags_missing_old_snapshot() -> None:
-    result = adapt_alert(AlertExplanationRequest(alert=alert(), new_snapshot=snapshot()))
+    result = adapt_alert(
+        AlertExplanationRequest(alert=alert(), new_snapshot=snapshot())
+    )
 
     assert result.ticker == "COMI"
     assert result.status.value == "partial"
@@ -94,7 +98,9 @@ def test_alert_adapter_flags_missing_old_snapshot() -> None:
 
 def test_follow_up_adapter_flags_missing_prior_context() -> None:
     result = adapt_follow_up(
-        FollowUpRequest(question="Why?", subject_type="recommendation", thread_id="thread-1")
+        FollowUpRequest(
+            question="Why?", subject_type="recommendation", thread_id="thread-1"
+        )
     )
 
     assert result.status.value == "partial"

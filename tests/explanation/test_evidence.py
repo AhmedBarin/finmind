@@ -1,6 +1,3 @@
-from datetime import datetime, timezone
-from uuid import uuid4
-
 import pytest
 
 from app.explanation.evidence import NewsEvidenceRetriever, build_evidence_query
@@ -48,4 +45,3 @@ async def test_retriever_reports_backend_failure_without_leaking_exception() -> 
 def test_query_limit_is_bounded_by_contract() -> None:
     with pytest.raises(ValueError):
         build_evidence_query(limit=0)
-

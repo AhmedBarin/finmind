@@ -43,7 +43,9 @@ def _deduplicate(items: Iterable[EvidenceItem]) -> list[EvidenceItem]:
     return result
 
 
-def _filter_items(items: Iterable[EvidenceItem], query: EvidenceQuery) -> list[EvidenceItem]:
+def _filter_items(
+    items: Iterable[EvidenceItem], query: EvidenceQuery
+) -> list[EvidenceItem]:
     filtered: list[EvidenceItem] = []
     for item in _deduplicate(items):
         if query.ticker and item.ticker != query.ticker:
@@ -65,7 +67,7 @@ class NewsEvidenceRetriever:
     async def retrieve(self, query: EvidenceQuery) -> EvidenceResult:
         try:
             result = await self.backend.retrieve(query)
-        except Exception:
+        except Exception:  # noqa: BLE001
             return EvidenceResult(
                 status=DataAvailability.UNAVAILABLE,
                 limitations=["News evidence retrieval is unavailable."],

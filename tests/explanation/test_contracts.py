@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -65,7 +65,7 @@ def test_stock_qa_response_has_explicit_date_and_disclaimer() -> None:
         data_date=None,
         answer="لا توجد بيانات حديثة كافية.",
         disclaimer=ARABIC_RISK_DISCLAIMER,
-        generated_at=datetime.now(timezone.utc),
+        generated_at=datetime.now(UTC),
         status="not_found",
     )
 

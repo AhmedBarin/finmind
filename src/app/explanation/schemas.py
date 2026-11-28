@@ -14,11 +14,10 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.explanation.constants import EXPLANATION_SCHEMA_VERSION
 from app.monitoring.schemas.alerts import AlertResponse
 from app.recommendation.schemas import RecommendationDecision, RecommendationResult
 from app.technical_analysis.schemas import TechnicalSnapshotRead
-
-from app.explanation.constants import EXPLANATION_SCHEMA_VERSION
 
 
 class ExplanationMode(StrEnum):
