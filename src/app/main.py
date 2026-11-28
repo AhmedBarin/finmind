@@ -21,6 +21,7 @@ from app.monitoring.scheduler import (
     stop_monitoring_scheduler,
 )
 from app.news.scheduler import start_scheduler, stop_scheduler
+from app.explanation.router import router as explanation_router
 from app.technical_analysis.router import router as technical_router
 
 
@@ -66,6 +67,7 @@ app.include_router(
 app.include_router(technical_router)
 app.include_router(investor_router)
 app.include_router(recommendation_router)
+app.include_router(explanation_router)
 
 
 _INVESTOR_CHAT_PAGE = Path(__file__).parent / "investor" / "static" / "chat.html"

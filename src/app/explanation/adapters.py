@@ -45,7 +45,9 @@ def adapt_recommendation(request: RecommendationExplanationRequest) -> AdaptedIn
             else DataAvailability.STALE
         )
     if recommendation.snapshot_id is None:
-        limitations.append("No technical snapshot ID is attached to the recommendation.")
+        limitations.append(
+            "No technical snapshot ID is attached to the recommendation."
+        )
         if status is DataAvailability.AVAILABLE:
             status = DataAvailability.PARTIAL
 
@@ -69,7 +71,10 @@ def adapt_alert(request: AlertExplanationRequest) -> AdaptedInput:
     limitations: list[str] = []
     status = DataAvailability.AVAILABLE
 
-    for label, snapshot in (("old", request.old_snapshot), ("new", request.new_snapshot)):
+    for label, snapshot in (
+        ("old", request.old_snapshot),
+        ("new", request.new_snapshot),
+    ):
         if snapshot is None:
             limitations.append(f"The {label} technical snapshot is unavailable.")
             status = DataAvailability.PARTIAL
@@ -116,12 +121,18 @@ def adapt_follow_up(request: FollowUpRequest) -> AdaptedInput:
         status = DataAvailability.PARTIAL
 
     raw_ticker = request.prior_context.get("ticker")
-    ticker = raw_ticker.strip().upper() if isinstance(raw_ticker, str) and raw_ticker.strip() else None
+    ticker = (
+        raw_ticker.strip().upper()
+        if isinstance(raw_ticker, str) and raw_ticker.strip()
+        else None
+    )
     if ticker is None:
         limitations.append("The prior context has no ticker.")
         status = DataAvailability.PARTIAL
 
-    raw_date = request.prior_context.get("data_date") or request.prior_context.get("trading_date")
+    raw_date = request.prior_context.get("data_date") or request.prior_context.get(
+        "trading_date"
+    )
     as_of = raw_date
     if isinstance(raw_date, str):
         try:
